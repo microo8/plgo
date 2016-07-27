@@ -1,6 +1,11 @@
 package main
 
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 /*
+
 #cgo CFLAGS: -Wall -Wpointer-arith -Wno-declaration-after-statement -Wendif-labels -Wmissing-format-attribute -Wformat-security -fno-strict-aliasing -fwrapv -fexcess-precision=standard -march=x86-64 -mtune=generic -O2 -pipe -fstack-protector-strong -fpic -I. -I./ -I/usr/include/postgresql/server -I/usr/include/postgresql/internal -D_FORTIFY_SOURCE=2 -D_GNU_SOURCE -I/usr/include/libxml2
 #cgo LDFLAGS: -Wall -Wmissing-prototypes -Wpointer-arith -Wdeclaration-after-statement -Wendif-labels -Wmissing-format-attribute -Wformat-security -fno-strict-aliasing -fwrapv -fexcess-precision=standard -march=x86-64 -mtune=generic -O2 -pipe -fstack-protector-strong -fpic -L/usr/lib -Wl,-O1,--sort-common,--as-needed,-z,relro  -Wl,--as-needed -Wl,-rpath,'/usr/lib',--enable-new-dtags -shared
 
