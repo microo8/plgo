@@ -100,7 +100,7 @@ func PGVal(val interface{}) Datum {
 }
 
 func (plan *SPIPlan) Close() error {
-	if SPI_conn {
+	if SPI_conn { //TODO this is not good
 		if C.SPI_finish() != C.SPI_OK_FINISH {
 			return errors.New("Error finish")
 		}
@@ -115,7 +115,7 @@ func PLGoPrepare(query string, types []string) (*SPIPlan, error) {
 		C.parseTypeString(C.CString(t), &typeIds[i], &typmod, C.false)
 	}
 	cquery := C.CString(query)
-	if !SPI_conn {
+	if !SPI_conn { //TODO
 		if C.SPI_connect() != C.SPI_OK_CONNECT {
 			return nil, errors.New("can't connect")
 		}
@@ -182,9 +182,5 @@ func (rows *Rows) Scan(args ...interface{}) error {
 		}
 		convertAssign(arg, val)
 	}
-	return nil
-}
-
-func convertAssign(arg, val interface{}) error {
 	return nil
 }
