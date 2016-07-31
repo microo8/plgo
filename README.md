@@ -29,3 +29,5 @@ output:
  foofoofoofoofoofoofoofoofoofoo
 (1 row)
 ```
+
+also SPI prepare and query is running!
