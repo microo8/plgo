@@ -21,7 +21,6 @@ func plgo_example(fcinfo *FuncInfo) Datum {
 	}
 	var ret string
 	for rows.Next() {
-		//return PGVal("meh")
 		var id int
 		var txt string
 		err = rows.Scan(&id, &txt)
