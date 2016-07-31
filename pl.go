@@ -9,14 +9,25 @@ package main
 PG_FUNCTION_INFO_V1(plgo_example);
 */
 import "C"
-import "unsafe"
+import (
+	"errors"
+	"fmt"
+	"unsafe"
+)
 
 func main() {}
 
-type Datum *C.Datum
+var SPI_conn bool
+
+type Datum C.Datum
 type FuncInfo C.FunctionCallInfoData
 type Text *C.text
 type Bytea *C.bytea
+type SPIPlan C.SPIPlan
+
+func Notice(text string) {
+	C.notice(C.CString(text))
+}
 
 func (fcinfo *FuncInfo) Text(i uint) string {
 	return TextToString(C.get_arg_text_p(fcinfo, C.uint(i)))
@@ -62,16 +73,118 @@ func ByteaToBytes(b Bytea) []byte {
 	return C.GoBytes(b, C.varsize(b)-C.VARHDRSZ)
 }
 
-//PGVal returns the Postgresql C type from Golang type (currently implements just stringtotext)
+//PGVal returns the Postgresql C type from Golang type
 func PGVal(val interface{}) Datum {
-	var size uintptr
 	switch v := val.(type) {
+	case error:
+		return (Datum)(C.cstring_to_datum(C.CString(v.Error())))
 	case string:
-		return (Datum)(unsafe.Pointer(C.cstring_to_text(C.CString(v))))
+		return (Datum)(C.cstring_to_datum(C.CString(v)))
+	case int16:
+		return (Datum)(C.int16_to_datum(C.int16(v)))
+	case uint16:
+		return (Datum)(C.uint16_to_datum(C.uint16(v)))
+	case int32:
+		return (Datum)(C.int32_to_datum(C.int32(v)))
+	case uint32:
+		return (Datum)(C.uint32_to_datum(C.uint32(v)))
+	case int64:
+		return (Datum)(C.int64_to_datum(C.int64(v)))
+	case int:
+		return (Datum)(C.int64_to_datum(C.int64(v)))
+	case uint:
+		return (Datum)(C.uint32_to_datum(C.uint32(v)))
 	default:
-		size = unsafe.Sizeof(val)
-		psize := (*C.uint64)(unsafe.Pointer(size))
-		pval := val.(*C.void)
-		return (Datum)(C.ret(pval, psize))
+		return (Datum)(C.void_datum())
 	}
+}
+
+func (plan *SPIPlan) Close() error {
+	if SPI_conn {
+		if C.SPI_finish() != C.SPI_OK_FINISH {
+			return errors.New("Error finish")
+		}
+	}
+	return nil
+}
+
+func PLGoPrepare(query string, types []string) (*SPIPlan, error) {
+	typeIds := make([]C.Oid, len(types))
+	var typmod C.int32
+	for i, t := range types {
+		C.parseTypeString(C.CString(t), &typeIds[i], &typmod, C.false)
+	}
+	cquery := C.CString(query)
+	if !SPI_conn {
+		if C.SPI_connect() != C.SPI_OK_CONNECT {
+			return nil, errors.New("can't connect")
+		}
+		SPI_conn = true
+	}
+	cplan := C.SPI_prepare(cquery, C.int(len(types)), &typeIds[0])
+	plan := (*SPIPlan)(unsafe.Pointer(cplan))
+	if plan != nil {
+		return plan, nil
+	} else {
+		return nil, errors.New(fmt.Sprintf("SPI_prepare failed: %s", C.GoString(C.SPI_result_code_string(C.SPI_result))))
+	}
+}
+
+func (plan *SPIPlan) Query(args ...interface{}) (*Rows, error) {
+	values := make([]Datum, len(args))
+	nulls := make([]C.char, len(args))
+	for i, arg := range args {
+		values[i] = PGVal(arg)
+	}
+
+	rv := C.SPI_execute_plan(plan, (*C.Datum)(unsafe.Pointer(&values[0])), &nulls[0], C.true, 0)
+	if rv == C.SPI_OK_SELECT && C.SPI_processed > 0 {
+		Notice(fmt.Sprintf("SPI_processed: %d", C.SPI_processed))
+		return &Rows{
+			tupleTable: C.SPI_tuptable,
+			processed:  uint32(C.SPI_processed),
+			current:    -1,
+		}, nil
+	} else {
+		return nil, errors.New(fmt.Sprintf("SPI_prepare failed: %s", C.GoString(C.SPI_result_code_string(C.SPI_result))))
+	}
+}
+
+type Rows struct {
+	tupleTable *C.SPITupleTable
+	processed  uint32
+	current    int
+}
+
+func (rows *Rows) Next() bool {
+	rows.current++
+	return rows.current < int(rows.processed)
+}
+
+func (rows *Rows) Scan(args ...interface{}) error {
+	for i, arg := range args {
+		Notice(fmt.Sprintf("current: %d", rows.current))
+		val := C.get_col_as_datum(rows.tupleTable.vals, rows.tupleTable.tupdesc, C.uint32(rows.current), C.int(i))
+		Notice("meh")
+		switch targ := arg.(type) {
+		case *string:
+			*targ = C.GoString(C.datum_to_cstring(val))
+		case *int16:
+			*targ = int16(C.datum_to_int16(val))
+		case *uint16:
+			*targ = uint16(C.datum_to_uint16(val))
+		case *int32:
+			*targ = int32(C.datum_to_int32(val))
+		case *uint32:
+			*targ = uint32(C.datum_to_uint32(val))
+		case *int64:
+			*targ = int64(C.datum_to_int64(val))
+		}
+		convertAssign(arg, val)
+	}
+	return nil
+}
+
+func convertAssign(arg, val interface{}) error {
+	return nil
 }
