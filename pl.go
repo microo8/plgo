@@ -180,7 +180,6 @@ func (rows *Rows) Scan(args ...interface{}) error {
 		case *int64:
 			*targ = int64(C.datum_to_int64(val))
 		}
-		convertAssign(arg, val)
 	}
 	return nil
 }
