@@ -11,10 +11,6 @@ PG_MODULE_MAGIC;
 
 typedef struct _SPI_plan SPIPlan;
 
-HeapTuple get_heap_tuble(HeapTuple *ht, uint i) {
-        return ht[i];
-}
-
 int varsize(void *var) {
         return VARSIZE(var);
 }

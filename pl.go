@@ -1,12 +1,12 @@
 package main
 
 /*
-#cgo CFLAGS: -Wall -Wpointer-arith -Wno-declaration-after-statement -Wendif-labels -Wmissing-format-attribute -Wformat-security -fno-strict-aliasing -fwrapv -fexcess-precision=standard -march=x86-64 -mtune=generic -O2 -pipe -fstack-protector-strong -fpic -I. -I./ -I/usr/include/postgresql/server -I/usr/include/postgresql/internal -D_FORTIFY_SOURCE=2 -D_GNU_SOURCE -I/usr/include/libxml2
-#cgo LDFLAGS: -Wall -Wmissing-prototypes -Wpointer-arith -Wdeclaration-after-statement -Wendif-labels -Wmissing-format-attribute -Wformat-security -fno-strict-aliasing -fwrapv -fexcess-precision=standard -march=x86-64 -mtune=generic -O2 -pipe -fstack-protector-strong -fpic -L/usr/lib -Wl,-O1,--sort-common,--as-needed,-z,relro  -Wl,--as-needed -Wl,-rpath,'/usr/lib',--enable-new-dtags -shared
+#cgo CFLAGS: -I/usr/include/postgresql/server
+#cgo LDFLAGS: -shared
 
 #include "plgo.h"
 
-PG_FUNCTION_INFO_V1(plgo_example);
+PG_FUNCTION_INFO_V1(plgo_example); //TODO somehow this must be in another file
 */
 import "C"
 import (
@@ -15,9 +15,11 @@ import (
 	"unsafe"
 )
 
+//TODO doc comments
+
 func main() {}
 
-var SPI_conn bool
+var SPI_conn bool //TODO not a good idea
 
 type Datum C.Datum
 type FuncInfo C.FunctionCallInfoData
@@ -25,16 +27,17 @@ type Text *C.text
 type Bytea *C.bytea
 type SPIPlan C.SPIPlan
 
-func Notice(text string) {
+func PLGoNotice(text string) {
 	C.notice(C.CString(text))
 }
 
 func (fcinfo *FuncInfo) Text(i uint) string {
-	return TextToString(C.get_arg_text_p(fcinfo, C.uint(i)))
+	return C.GoString(C.text_to_cstring(C.get_arg_text_p(fcinfo, C.uint(i))))
 }
 
 func (fcinfo *FuncInfo) Bytea(i uint) []byte {
-	return ByteaToBytes(C.get_arg_bytea_p(fcinfo, C.uint(i)))
+    b := C.get_arg_bytea_p(fcinfo, C.uint(i)) //TODO check this
+	return C.GoBytes(b, C.varsize(b)-C.VARHDRSZ)
 }
 
 func (fcinfo *FuncInfo) Int16(i uint) int16 {
@@ -63,14 +66,6 @@ func (fcinfo *FuncInfo) Int(i uint) int {
 
 func (fcinfo *FuncInfo) Uint(i uint) uint {
 	return uint(C.get_arg_uint32(fcinfo, C.uint(i)))
-}
-
-func TextToString(t Text) string {
-	return C.GoString(C.text_to_cstring(t))
-}
-
-func ByteaToBytes(b Bytea) []byte {
-	return C.GoBytes(b, C.varsize(b)-C.VARHDRSZ)
 }
 
 //PGVal returns the Postgresql C type from Golang type
@@ -139,19 +134,20 @@ func (plan *SPIPlan) Query(args ...interface{}) (*Rows, error) {
 
 	rv := C.SPI_execute_plan(plan, (*C.Datum)(unsafe.Pointer(&values[0])), &nulls[0], C.true, 0)
 	if rv == C.SPI_OK_SELECT && C.SPI_processed > 0 {
-		Notice(fmt.Sprintf("SPI_processed: %d", C.SPI_processed))
 		return &Rows{
 			tupleTable: C.SPI_tuptable,
 			processed:  uint32(C.SPI_processed),
-			current:    -1,
+			current:    -1, //TODO this is stupid
 		}, nil
 	} else {
 		return nil, errors.New(fmt.Sprintf("SPI_prepare failed: %s", C.GoString(C.SPI_result_code_string(C.SPI_result))))
 	}
 }
 
+//TODO SPIPlan QueryRow and Exec
+
 type Rows struct {
-	tupleTable *C.SPITupleTable
+	tupleTable *C.SPITupleTable //TODO mabye a constructor that copies the tupleTable.vals in a go slice and tupleTable.tupdesc
 	processed  uint32
 	current    int
 }
@@ -163,9 +159,7 @@ func (rows *Rows) Next() bool {
 
 func (rows *Rows) Scan(args ...interface{}) error {
 	for i, arg := range args {
-		Notice(fmt.Sprintf("current: %d", rows.current))
 		val := C.get_col_as_datum(rows.tupleTable.vals, rows.tupleTable.tupdesc, C.uint32(rows.current), C.int(i))
-		Notice("meh")
 		switch targ := arg.(type) {
 		case *string:
 			*targ = C.GoString(C.datum_to_cstring(val))
