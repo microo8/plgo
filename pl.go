@@ -4,77 +4,202 @@ package main
 #cgo CFLAGS: -I/usr/include/postgresql/server
 #cgo LDFLAGS: -shared
 
-#include "plgo.h"
+#include "postgres.h"
+#include "fmgr.h"
+#include "utils/builtins.h"
+#include "utils/elog.h"
+#include "executor/spi.h"
+#include "parser/parse_type.h"
 
+#ifdef PG_MODULE_MAGIC
+PG_MODULE_MAGIC;
+#endif
+
+
+int varsize(void *var) {
+        return VARSIZE(var);
+}
+
+void notice(char* string) {
+        elog(NOTICE, string, "");
+}
+
+HeapTuple get_heap_tuple(HeapTuple* ht, uint i) {
+        return ht[i];
+}
+
+Datum get_col_as_datum(HeapTuple ht, TupleDesc td, int colnumber) {
+        bool isNull = true;
+        return SPI_getbinval(ht, td, colnumber + 1, &isNull);
+}
+
+text* get_arg_text_p(PG_FUNCTION_ARGS, uint i) {
+        return PG_GETARG_TEXT_P(i);
+}
+
+bytea* get_arg_bytea_p(PG_FUNCTION_ARGS, uint i) {
+        return PG_GETARG_BYTEA_P(i);
+}
+
+int16 get_arg_int16(PG_FUNCTION_ARGS, uint i) {
+        return PG_GETARG_INT16(i);
+}
+
+uint16 get_arg_uint16(PG_FUNCTION_ARGS, uint i) {
+        return PG_GETARG_UINT32(i);
+}
+
+int32 get_arg_int32(PG_FUNCTION_ARGS, uint i) {
+        return PG_GETARG_INT32(i);
+}
+
+uint32 get_arg_uint32(PG_FUNCTION_ARGS, uint i) {
+        return PG_GETARG_UINT32(i);
+}
+
+int64 get_arg_int64(PG_FUNCTION_ARGS, uint i) {
+        return PG_GETARG_INT64(i);
+}
+
+Datum void_datum(){
+        PG_RETURN_VOID();
+}
+
+Datum cstring_to_datum(char *val) {
+        return CStringGetDatum(cstring_to_text(val));
+}
+
+Datum int16_to_datum(int16 val) {
+        return Int16GetDatum(val);
+}
+
+Datum uint16_to_datum(uint16 val) {
+        return UInt16GetDatum(val);
+}
+
+Datum int32_to_datum(int32 val) {
+        return Int32GetDatum(val);
+}
+
+Datum uint32_to_datum(uint32 val) {
+        return UInt32GetDatum(val);
+}
+
+Datum int64_to_datum(int64 val) {
+        return Int64GetDatum(val);
+}
+
+char* datum_to_cstring(Datum val) {
+        return DatumGetCString(text_to_cstring((struct varlena *)val));
+}
+
+int16 datum_to_int16(Datum val) {
+        return DatumGetInt16(val);
+}
+
+uint16 datum_to_uint16(Datum val) {
+        return DatumGetUInt16(val);
+}
+
+int32 datum_to_int32(Datum val) {
+        return DatumGetInt32(val);
+}
+
+uint32 datum_to_uint32(Datum val) {
+        return DatumGetUInt32(val);
+}
+
+int64 datum_to_int64(Datum val) {
+        return DatumGetInt64(val);
+}
+
+//PG_FUNCTION declarations
 PG_FUNCTION_INFO_V1(plgo_example); //TODO somehow this must be in another file
 */
 import "C"
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"unsafe"
 )
 
 //TODO doc comments
 
+//this hase to be here
 func main() {}
 
 var SPI_conn bool //TODO not a good idea
 
+//Datum is the return type of postgresql
 type Datum C.Datum
-type FuncInfo C.FunctionCallInfoData
-type Text *C.text
-type Bytea *C.bytea
-type SPIPlan C.SPIPlan
 
-func PLGoNotice(text string) {
+//FuncInfo is the type of parameters that all functions get
+type FuncInfo C.FunctionCallInfoData
+
+//Prepared SQL statement
+type Plan C.struct_SPI_Plan
+
+//elog notify
+func Notice(text string) {
 	C.notice(C.CString(text))
 }
 
+//Returns i'th parameter of the function and converts it from text to string TODO: error?
 func (fcinfo *FuncInfo) Text(i uint) string {
 	return C.GoString(C.text_to_cstring(C.get_arg_text_p(fcinfo, C.uint(i))))
 }
 
+//Returns i'th parameter of the function and converts it from bytea to []byte TODO: error?
 func (fcinfo *FuncInfo) Bytea(i uint) []byte {
-    b := C.get_arg_bytea_p(fcinfo, C.uint(i)) //TODO check this
+	b := C.get_arg_bytea_p(fcinfo, C.uint(i)) //TODO check this
 	return C.GoBytes(b, C.varsize(b)-C.VARHDRSZ)
 }
 
+//Returns i'th parameter of the function and converts it to int16 TODO: error?
 func (fcinfo *FuncInfo) Int16(i uint) int16 {
 	return int16(C.get_arg_int16(fcinfo, C.uint(i)))
 }
 
+//Returns i'th parameter of the function and converts it to uint16 TODO: error?
 func (fcinfo *FuncInfo) Uint16(i uint) uint16 {
 	return uint16(C.get_arg_uint16(fcinfo, C.uint(i)))
 }
 
+//Returns i'th parameter of the function and converts it to int32 TODO: error?
 func (fcinfo *FuncInfo) Int32(i uint) int32 {
 	return int32(C.get_arg_int32(fcinfo, C.uint(i)))
 }
 
+//Returns i'th parameter of the function and converts it to uint32 TODO: error?
 func (fcinfo *FuncInfo) Uint32(i uint) uint32 {
 	return uint32(C.get_arg_uint32(fcinfo, C.uint(i)))
 }
 
+//Returns i'th parameter of the function and converts it to int64 TODO: error?
 func (fcinfo *FuncInfo) Int64(i uint) int64 {
 	return int64(C.get_arg_int64(fcinfo, C.uint(i)))
 }
 
+//Returns i'th parameter of the function and converts it to int TODO: error?
 func (fcinfo *FuncInfo) Int(i uint) int {
 	return int(C.get_arg_int64(fcinfo, C.uint(i)))
 }
 
+//Returns i'th parameter of the function and converts it to uint TODO: error?
 func (fcinfo *FuncInfo) Uint(i uint) uint {
 	return uint(C.get_arg_uint32(fcinfo, C.uint(i)))
 }
 
-//PGVal returns the Postgresql C type from Golang type
-func PGVal(val interface{}) Datum {
+//ToDatum returns the Postgresql C type from Golang type
+func ToDatum(val interface{}) Datum {
 	switch v := val.(type) {
 	case error:
 		return (Datum)(C.cstring_to_datum(C.CString(v.Error())))
 	case string:
 		return (Datum)(C.cstring_to_datum(C.CString(v)))
+	case []byte:
+		return *(*Datum)(unsafe.Pointer(&v[0]))
 	case int16:
 		return (Datum)(C.int16_to_datum(C.int16(v)))
 	case uint16:
@@ -94,86 +219,178 @@ func PGVal(val interface{}) Datum {
 	}
 }
 
-func (plan *SPIPlan) Close() error {
+//TODO this is not good :(
+func (plan *Plan) Close() error {
 	if SPI_conn { //TODO this is not good
 		if C.SPI_finish() != C.SPI_OK_FINISH {
+			SPI_conn = false
 			return errors.New("Error finish")
 		}
 	}
+	SPI_conn = false
 	return nil
 }
 
-func PLGoPrepare(query string, types []string) (*SPIPlan, error) {
+//Prepare prepares an SQL query and returns a Plan that can be executed
+//query - the SQL query
+//types - an array of strings with type names from postgresql of the prepared query
+func Prepare(query string, types []string) (*Plan, error) {
 	typeIds := make([]C.Oid, len(types))
 	var typmod C.int32
 	for i, t := range types {
 		C.parseTypeString(C.CString(t), &typeIds[i], &typmod, C.false)
 	}
 	cquery := C.CString(query)
-	if !SPI_conn { //TODO
+	if !SPI_conn { //TODO SPI_connect must be somewhere here but the SPI_conn solution is nonsense
 		if C.SPI_connect() != C.SPI_OK_CONNECT {
 			return nil, errors.New("can't connect")
 		}
 		SPI_conn = true
 	}
 	cplan := C.SPI_prepare(cquery, C.int(len(types)), &typeIds[0])
-	plan := (*SPIPlan)(unsafe.Pointer(cplan))
+	plan := (*Plan)(unsafe.Pointer(cplan))
 	if plan != nil {
 		return plan, nil
 	} else {
-		return nil, errors.New(fmt.Sprintf("SPI_prepare failed: %s", C.GoString(C.SPI_result_code_string(C.SPI_result))))
+		return nil, errors.New(fmt.Sprintf("Prepare failed: %s", C.GoString(C.SPI_result_code_string(C.SPI_result))))
 	}
 }
 
-func (plan *SPIPlan) Query(args ...interface{}) (*Rows, error) {
+//Query executes the prepared Plan with the provided args and returns
+//multiple Rows result, that can be iterated
+func (plan *Plan) Query(args ...interface{}) (*Rows, error) {
 	values := make([]Datum, len(args))
 	nulls := make([]C.char, len(args))
 	for i, arg := range args {
-		values[i] = PGVal(arg)
+		values[i] = ToDatum(arg)
+		nulls[i] = C.char(' ')
 	}
 
 	rv := C.SPI_execute_plan(plan, (*C.Datum)(unsafe.Pointer(&values[0])), &nulls[0], C.true, 0)
 	if rv == C.SPI_OK_SELECT && C.SPI_processed > 0 {
-		return &Rows{
-			tupleTable: C.SPI_tuptable,
-			processed:  uint32(C.SPI_processed),
-			current:    -1, //TODO this is stupid
-		}, nil
+		return newRows(C.SPI_tuptable.vals, C.SPI_tuptable.tupdesc, C.SPI_processed), nil
 	} else {
-		return nil, errors.New(fmt.Sprintf("SPI_prepare failed: %s", C.GoString(C.SPI_result_code_string(C.SPI_result))))
+		return nil, errors.New(fmt.Sprintf("Query failed: %s", C.GoString(C.SPI_result_code_string(C.SPI_result))))
 	}
 }
 
-//TODO SPIPlan QueryRow and Exec
+//Query executes the prepared Plan with the provided args and returns
+//multiple Rows result, that can be iterated
+func (plan *Plan) QueryRow(args ...interface{}) (*Row, error) {
+	values := make([]Datum, len(args))
+	nulls := make([]C.char, len(args))
+	for i, arg := range args {
+		values[i] = ToDatum(arg)
+		nulls[i] = C.char(' ')
+	}
 
+	rv := C.SPI_execute_plan(plan, (*C.Datum)(unsafe.Pointer(&values[0])), &nulls[0], C.false, 1)
+	if rv >= C.int(0) && C.SPI_processed == 1 {
+		return &Row{
+			heapTuple: C.get_heap_tuple(C.SPI_tuptable.vals, C.uint(0)),
+			tupleDesc: C.SPI_tuptable.tupdesc,
+		}, nil
+	} else {
+		return nil, errors.New(fmt.Sprintf("QueryRow failed: %s", C.GoString(C.SPI_result_code_string(C.SPI_result))))
+	}
+}
+
+//Exec executes a prepared query Plan with no result
+func (plan *Plan) Exec(args ...interface{}) error {
+	values := make([]Datum, len(args))
+	nulls := make([]C.char, len(args))
+	for i, arg := range args {
+		values[i] = ToDatum(arg)
+		nulls[i] = C.char(' ')
+		Notice(fmt.Sprintf("%s %s", values[i], arg))
+	}
+	rv := C.SPI_execute_plan(plan, (*C.Datum)(unsafe.Pointer(&values[0])), &nulls[0], C.false, 0)
+	if rv >= C.int(0) && C.SPI_processed == 1 {
+		return nil
+	} else {
+		return errors.New(fmt.Sprintf("Exec failed: %s", C.GoString(C.SPI_result_code_string(C.SPI_result))))
+	}
+}
+
+//Rows represents the result of running a prepared Plan with Query
 type Rows struct {
-	tupleTable *C.SPITupleTable //TODO mabye a constructor that copies the tupleTable.vals in a go slice and tupleTable.tupdesc
+	heapTuples []C.HeapTuple
+	tupleDesc  C.TupleDesc
 	processed  uint32
-	current    int
+	current    C.HeapTuple
 }
 
+func newRows(heapTuples *C.HeapTuple, tupleDesc C.TupleDesc, processed C.uint32) *Rows {
+	rows := &Rows{
+		tupleDesc: tupleDesc,
+		processed: uint32(processed),
+	}
+	rows.heapTuples = make([]C.HeapTuple, rows.processed)
+	for i := 0; i < int(rows.processed); i++ {
+		rows.heapTuples[i] = C.get_heap_tuple(heapTuples, C.uint(i))
+	}
+	return rows
+}
+
+//Next sets the Rows to another row, returs false if there isn't another
+//must be first called to set the Rows to the first row
 func (rows *Rows) Next() bool {
-	rows.current++
-	return rows.current < int(rows.processed)
+	if len(rows.heapTuples) == 0 {
+		return false
+	}
+	rows.current = rows.heapTuples[0]
+	rows.heapTuples = rows.heapTuples[1:]
+	return true
 }
 
+//Scan takes pointers to variables that will be filled with the values of the current row
 func (rows *Rows) Scan(args ...interface{}) error {
 	for i, arg := range args {
-		val := C.get_col_as_datum(rows.tupleTable.vals, rows.tupleTable.tupdesc, C.uint32(rows.current), C.int(i))
-		switch targ := arg.(type) {
-		case *string:
-			*targ = C.GoString(C.datum_to_cstring(val))
-		case *int16:
-			*targ = int16(C.datum_to_int16(val))
-		case *uint16:
-			*targ = uint16(C.datum_to_uint16(val))
-		case *int32:
-			*targ = int32(C.datum_to_int32(val))
-		case *uint32:
-			*targ = uint32(C.datum_to_uint32(val))
-		case *int64:
-			*targ = int64(C.datum_to_int64(val))
+		val := C.get_col_as_datum(rows.current, rows.tupleDesc, C.int(i))
+		err := ScanVal(val, arg)
+		if err != nil {
+			return err
 		}
+	}
+	return nil
+}
+
+type Row struct {
+	tupleDesc C.TupleDesc
+	heapTuple C.HeapTuple
+}
+
+func (row *Row) Scan(args ...interface{}) error {
+	for i, arg := range args {
+		val := C.get_col_as_datum(row.heapTuple, row.tupleDesc, C.int(i))
+		err := ScanVal(val, arg)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func ScanVal(val C.Datum, arg interface{}) error {
+	switch targ := arg.(type) {
+	case *string:
+		*targ = C.GoString(C.datum_to_cstring(val))
+	case *int16:
+		*targ = int16(C.datum_to_int16(val))
+	case *uint16:
+		*targ = uint16(C.datum_to_uint16(val))
+	case *int32:
+		*targ = int32(C.datum_to_int32(val))
+	case *uint32:
+		*targ = uint32(C.datum_to_uint32(val))
+	case *int64:
+		*targ = int64(C.datum_to_int64(val))
+	case *int:
+		*targ = int(C.datum_to_int64(val))
+	case *uint:
+		*targ = uint(C.datum_to_uint32(val))
+	default:
+		return errors.New("Unsupported type in Scan (" + reflect.TypeOf(arg).String() + ")")
 	}
 	return nil
 }
