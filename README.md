@@ -25,7 +25,7 @@ Creating new stored procedures in plgo is easy:
     */
     import "C"
 
-    //all stored procedures must be of type func(fcinfo *FuncInfo) Datum
+    //all stored procedures must be of type func(*FuncInfo) Datum
     //before the procedure must be an comment: //export procedure_name
 
     //export my_awesome_procedure
@@ -67,7 +67,6 @@ Creating new stored procedures in plgo is easy:
 
 4. Build an shared object file with `$ go build -v -buildmode=c-shared -o my_procedures.so my_procedures.go pl.go`
 
-5. Copy the shared object file to the PostgreSQL libs directory `sudo cp my_procedures.so $(pg_config --pkglibdir)`
 
 6. Create the procedure in PostgreSQL
     ```sql
