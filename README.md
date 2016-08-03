@@ -9,7 +9,9 @@ Creating new stored procedures in plgo is easy:
 
 2. Edit the section in pl.go marked as: //PG_FUNCTION declarations
 eg.
+```c
 PG_FUNCTION_INFO_V1(my_awesome_procedure)
+```
 
 3. Create a file where your procedures will be declared
 eg. my_procedures.go:
