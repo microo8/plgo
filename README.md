@@ -70,20 +70,18 @@ Creating new stored procedures in plgo is easy:
 5. Copy the shared object file to the PostgreSQL libs directory `sudo cp my_procedures.so $(pg_config --pkglibdir)`
 
 6. Create the procedure in PostgreSQL
-
-```sql
-CREATE OR REPLACE FUNCTION public.my_awesome_procedure(text, integer)
-  RETURNS text AS
-'$libdir/my_procedures', 'my_awesome_procedure'
-  LANGUAGE c IMMUTABLE STRICT;
-```
+    ```sql
+    CREATE OR REPLACE FUNCTION public.my_awesome_procedure(text, integer)
+      RETURNS text AS
+    '$libdir/my_procedures', 'my_awesome_procedure'
+      LANGUAGE c IMMUTABLE STRICT;
+    ```
 
 7. Happily run the function in your queries `select my_awesome_procedure('foo', 10)`
-output:
-
-```
-                         plgo_example                         
---------------------------------------------------------------
- foomehfoomehfoomehfoomehfoomehfoomehfoomehfoomehfoomehfoomeh
-(1 row)
-```
+    output:
+    ```
+                             plgo_example                         
+    --------------------------------------------------------------
+     foomehfoomehfoomehfoomehfoomehfoomehfoomehfoomehfoomehfoomeh
+    (1 row)
+    ```
