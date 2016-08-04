@@ -46,7 +46,7 @@ Creating new stored procedures in plgo is easy:
     	defer db.Close()
 
 	    //preparing query statement
-	    plan, err := Prepare("select * from test where id=$1", []string{"integer"})
+	    plan, err := db.Prepare("select * from test where id=$1", []string{"integer"})
 	    if err != nil {
     		logger.Fatal(err)
 	    }
