@@ -30,7 +30,7 @@ Creating new stored procedures in plgo is easy:
     //before the procedure must be an comment: //export procedure_name
 
     //export my_awesome_procedure
-    func my_awesome_procedure(fcinfo \*FuncInfo) Datum {
+    func my_awesome_procedure(fcinfo *FuncInfo) Datum {
 	    //getting the function parameters
 	    t := fcinfo.Text(0)
 	    x := fcinfo.Int(1)
@@ -50,7 +50,6 @@ Creating new stored procedures in plgo is easy:
 	    if err != nil {
     		logger.Fatal(err)
 	    }
-	    defer plan.Close()
 
 	    //running statement
 	    row, err := plan.QueryRow(1)
