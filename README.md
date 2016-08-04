@@ -24,27 +24,38 @@ Creating new stored procedures in plgo is easy:
     #include "fmgr.h"
     */
     import "C"
+    import "log"
 
     //all stored procedures must be of type func(*FuncInfo) Datum
     //before the procedure must be an comment: //export procedure_name
 
     //export my_awesome_procedure
-    func my_awesome_procedure(fcinfo *FuncInfo) Datum {
+    func my_awesome_procedure(fcinfo \*FuncInfo) Datum {
 	    //getting the function parameters
 	    t := fcinfo.Text(0)
 	    x := fcinfo.Int(1)
 
+	    //Creating notice logger
+	    logger := log.New(&elog{}, "", log.Ltime|log.Lshortfile)
+
+    	//connect to DB
+    	db, err := Open()
+    	if err != nil {
+    		logger.Fatal(err)
+    	}
+    	defer db.Close()
+
 	    //preparing query statement
 	    plan, err := Prepare("select * from test where id=$1", []string{"integer"})
 	    if err != nil {
-		    return ToDatum(err)
+    		logger.Fatal(err)
 	    }
 	    defer plan.Close()
 
 	    //running statement
 	    row, err := plan.QueryRow(1)
 	    if err != nil {
-		    return ToDatum(err)
+    		logger.Fatal(err)
 	    }
 
 	    //scanning result row
@@ -52,7 +63,7 @@ Creating new stored procedures in plgo is easy:
 	    var txt string
 	    err = row.Scan(&id, &txt)
 	    if err != nil {
-		    return ToDatum(err)
+    		logger.Fatal(err)
 	    }
 
 	    //some magic with return value :)
@@ -60,6 +71,7 @@ Creating new stored procedures in plgo is easy:
 	    for i := 0; i < x; i++ {
 		    ret += t + txt
 	    }
+
         //return type must be converted to Datum
 	    return ToDatum(ret)
     }
