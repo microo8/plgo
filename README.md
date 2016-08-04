@@ -76,8 +76,9 @@ Creating new stored procedures in plgo is easy:
     }
     ```
 
-4. Build an shared object file with `$ go build -v -buildmode=c-shared -o my_procedures.so my_procedures.go pl.go`
+4. Build an shared objects file with `$ go build -v -buildmode=c-shared -o my_procedures.so my_procedures.go pl.go`
 
+5. Copy the shared objects file to PostgreSQL libdir `$ sudo cp my_procedures.so $(pg_config --pkglibdir)`
 
 6. Create the procedure in PostgreSQL
     ```sql
