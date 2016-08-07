@@ -6,7 +6,11 @@ package main
 
 #include "postgres.h"
 #include "fmgr.h"
+#include "pgtime.h"
+#include "catalog/pg_type.h"
 #include "utils/builtins.h"
+#include "utils/date.h"
+#include "utils/timestamp.h"
 #include "utils/elog.h"
 #include "executor/spi.h"
 #include "parser/parse_type.h"
@@ -14,7 +18,6 @@ package main
 #ifdef PG_MODULE_MAGIC
 PG_MODULE_MAGIC;
 #endif
-
 
 int varsize(void *var) {
     return VARSIZE(var);
@@ -33,6 +36,8 @@ Datum get_col_as_datum(HeapTuple ht, TupleDesc td, int colnumber) {
     return SPI_getbinval(ht, td, colnumber + 1, &isNull);
 }
 
+
+//Get value from function args
 text* get_arg_text_p(PG_FUNCTION_ARGS, uint i) {
     return PG_GETARG_TEXT_P(i);
 }
@@ -61,6 +66,19 @@ int64 get_arg_int64(PG_FUNCTION_ARGS, uint i) {
     return PG_GETARG_INT64(i);
 }
 
+DateADT get_arg_date(PG_FUNCTION_ARGS, uint i) {
+	return PG_GETARG_DATEADT(i);
+}
+
+TimeADT get_arg_time(PG_FUNCTION_ARGS, uint i) {
+	return PG_GETARG_TIMEADT(i);
+}
+
+TimeTzADT* get_arg_timetz(PG_FUNCTION_ARGS, uint i) {
+	return PG_GETARG_TIMETZADT_P(i);
+}
+
+//val to datum
 Datum void_datum(){
     PG_RETURN_VOID();
 }
@@ -89,6 +107,19 @@ Datum int64_to_datum(int64 val) {
     return Int64GetDatum(val);
 }
 
+Datum date_to_datum(DateADT val){
+	return DateADTGetDatum(val);
+}
+
+Datum time_to_datum(TimeADT val){
+	return TimeADTGetDatum(val);
+}
+
+Datum timetz_to_datum(TimeTzADT* val) {
+	return TimeTzADTPGetDatum(val);
+}
+
+//Datum to ...
 char* datum_to_cstring(Datum val) {
     return DatumGetCString(text_to_cstring((struct varlena *)val));
 }
@@ -113,6 +144,18 @@ int64 datum_to_int64(Datum val) {
     return DatumGetInt64(val);
 }
 
+DateADT datum_to_date(Datum val) {
+	return DatumGetDateADT(val);
+}
+
+TimeADT datum_to_time(Datum val) {
+	return DatumGetTimeADT(val);
+}
+
+TimeTzADT* datum_to_timetz(Datum val) {
+	return DatumGetTimeTzADTP(val);
+}
+
 //PG_FUNCTION declarations
 PG_FUNCTION_INFO_V1(plgo_example); //TODO somehow this must be in another file
 */
@@ -122,6 +165,7 @@ import (
 	"fmt"
 	"reflect"
 	"sync"
+	"time"
 	"unsafe"
 )
 
@@ -215,6 +259,12 @@ func (fcinfo *FuncInfo) Uint(i uint) uint {
 	return uint(C.get_arg_uint32(fcinfo, C.uint(i)))
 }
 
+func (fcinfo *FuncInfo) Date(i uint) time.Time {
+	date := C.get_arg_date(fcinfo, C.uint(i))
+	C.elog_notice(C.CString(fmt.Sprintf("time: %s", date)))
+	return time.Now()
+}
+
 //Datum is the return type of postgresql
 type Datum C.Datum
 
@@ -241,6 +291,8 @@ func ToDatum(val interface{}) Datum {
 		return (Datum)(C.int64_to_datum(C.int64(v)))
 	case uint:
 		return (Datum)(C.uint32_to_datum(C.uint32(v)))
+	case time.Time:
+		return (Datum)(C.time_to_datum(C.TimeADT(v.Unix())))
 	default:
 		return (Datum)(C.void_datum())
 	}
@@ -366,7 +418,7 @@ func (rows *Rows) Next() bool {
 func (rows *Rows) Scan(args ...interface{}) error {
 	for i, arg := range args {
 		val := C.get_col_as_datum(rows.current, rows.tupleDesc, C.int(i))
-		err := ScanVal(val, arg)
+		err := ScanVal(C.SPI_gettypeid(rows.tupleDesc, C.int(i+1)), val, arg)
 		if err != nil {
 			return err
 		}
@@ -382,7 +434,7 @@ type Row struct {
 func (row *Row) Scan(args ...interface{}) error {
 	for i, arg := range args {
 		val := C.get_col_as_datum(row.heapTuple, row.tupleDesc, C.int(i))
-		err := ScanVal(val, arg)
+		err := ScanVal(C.SPI_gettypeid(row.tupleDesc, C.int(i+1)), val, arg)
 		if err != nil {
 			return err
 		}
@@ -390,24 +442,66 @@ func (row *Row) Scan(args ...interface{}) error {
 	return nil
 }
 
-func ScanVal(val C.Datum, arg interface{}) error {
-	switch targ := arg.(type) {
+func ScanVal(oid C.Oid, val C.Datum, arg interface{}) error {
+	switch targ := arg.(type) { //TODO error by converting
 	case *string:
+		if oid != C.TEXTOID {
+			return errors.New("Column type is not text")
+		}
 		*targ = C.GoString(C.datum_to_cstring(val))
 	case *int16:
+		if oid != C.INT2OID {
+			return errors.New("Column type is not int16")
+		}
 		*targ = int16(C.datum_to_int16(val))
 	case *uint16:
+		if oid != C.INT2OID {
+			return errors.New("Column type is not uint16")
+		}
 		*targ = uint16(C.datum_to_uint16(val))
 	case *int32:
+		if oid != C.INT4OID {
+			return errors.New("Column type is not int32")
+		}
 		*targ = int32(C.datum_to_int32(val))
 	case *uint32:
+		if oid != C.INT4OID {
+			return errors.New("Column type is not uint32")
+		}
 		*targ = uint32(C.datum_to_uint32(val))
 	case *int64:
+		if oid != C.INT8OID {
+			return errors.New("Column type is not int64")
+		}
 		*targ = int64(C.datum_to_int64(val))
 	case *int:
+		if oid != C.INT2OID && oid != C.INT4OID && oid != C.INT8OID {
+			return errors.New("Column type is not int")
+		}
 		*targ = int(C.datum_to_int64(val))
 	case *uint:
+		if oid != C.INT2OID && oid != C.INT4OID && oid != C.INT8OID {
+			return errors.New("Column type is not uint64")
+		}
 		*targ = uint(C.datum_to_uint32(val))
+	case *time.Time:
+		switch oid {
+		case C.DATEOID:
+			dateadt := int(C.datum_to_date(val))
+			*targ = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC).AddDate(0, 0, dateadt)
+			C.elog_notice(C.CString(fmt.Sprintf("date: %s", *targ)))
+		case C.TIMESTAMPOID:
+			t := C.datum_to_time(val)
+			*targ = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC).Add(time.Second * time.Duration(int64(t)/int64(C.USECS_PER_SEC)))
+			C.elog_notice(C.CString(fmt.Sprintf("time: %s", *targ)))
+		case C.TIMESTAMPTZOID:
+			C.elog_notice(C.CString("timetz"))
+			t := C.datum_to_timetz(val)
+			C.elog_notice(C.CString(fmt.Sprintf("timetz: %s", t)))
+			loc := time.FixedZone("", int(t.zone))
+			*targ = time.Date(2000, 1, 1, 0, 0, 0, 0, loc).Add(time.Second * time.Duration(int64(t.time)/int64(C.USECS_PER_SEC)))
+			C.elog_notice(C.CString(fmt.Sprintf("timetz: %s", *targ)))
+		}
 	default:
 		return errors.New("Unsupported type in Scan (" + reflect.TypeOf(arg).String() + ")")
 	}

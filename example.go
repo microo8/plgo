@@ -5,7 +5,10 @@ package main
 #include "fmgr.h"
 */
 import "C"
-import "log"
+import (
+	"log"
+	"time"
+)
 
 //export plgo_example
 func plgo_example(fcinfo *FuncInfo) Datum {
@@ -46,11 +49,14 @@ func plgo_example(fcinfo *FuncInfo) Datum {
 	//scanning result row
 	var id int
 	var txt string
-	err = row.Scan(&id, &txt)
+	var date time.Time
+	var ti time.Time
+	var titz time.Time
+	err = row.Scan(&id, &txt, &date, &ti, &titz)
 	if err != nil {
 		logger.Fatal(err)
 	}
-	logger.Printf("id: %d txt: %s", id, txt)
+	logger.Printf("id: %d txt: %s date: %s time: %s timetz: %s", id, txt, date, ti, titz)
 
 	//some magic with return value :)
 	var ret string
