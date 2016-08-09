@@ -78,6 +78,10 @@ TimestampTz get_arg_timetz(PG_FUNCTION_ARGS, uint i) {
 	return PG_GETARG_TIMESTAMPTZ(i);
 }
 
+bool get_arg_bool(PG_FUNCTION_ARGS, uint i) {
+	return PG_GETARG_BOOL(i);
+}
+
 //val to datum//////////////////////////////////////////////////
 Datum void_datum(){
     PG_RETURN_VOID();
@@ -119,6 +123,10 @@ Datum timetz_to_datum(TimestampTz val) {
 	return TimestampTzGetDatum(val);
 }
 
+Datum bool_to_datum(bool val) {
+	return BoolGetDatum(val);
+}
+
 //Datum to val //////////////////////////////////////////////////////////
 char* datum_to_cstring(Datum val) {
     return DatumGetCString(text_to_cstring((struct varlena *)val));
@@ -156,8 +164,12 @@ TimestampTz datum_to_timetz(Datum val) {
 	return DatumGetTimestampTz(val);
 }
 
+bool datum_to_bool(Datum val) {
+	return DatumGetBool(val);
+}
+
 //PG_FUNCTION declarations
-PG_FUNCTION_INFO_V1(plgo_example); //TODO somehow this must be in another file
+#include "funcdec.h"
 */
 import "C"
 import (
@@ -274,6 +286,10 @@ func (fcinfo *FuncInfo) TimeTz(i uint) time.Time {
 	return time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC).Add(time.Second * time.Duration(int64(t)/int64(C.USECS_PER_SEC))).Local()
 }
 
+func (fcinfo *FuncInfo) Bool(i uint) bool {
+	return C.get_arg_bool(fcinfo, C.uint(i)) == C.true
+}
+
 //Datum is the return type of postgresql
 type Datum C.Datum
 
@@ -302,6 +318,12 @@ func ToDatum(val interface{}) Datum {
 		return (Datum)(C.uint32_to_datum(C.uint32(v)))
 	case time.Time:
 		return (Datum)(C.timetz_to_datum(C.TimestampTz(v.UTC().UnixNano())))
+	case bool:
+		if v {
+			return (Datum)(C.bool_to_datum(C.true))
+		} else {
+			return (Datum)(C.bool_to_datum(C.false))
+		}
 	default:
 		return (Datum)(C.void_datum())
 	}
@@ -337,19 +359,7 @@ func (db *DB) Prepare(query string, types []string) (*Plan, error) {
 //Query executes the prepared Plan with the provided args and returns
 //multiple Rows result, that can be iterated
 func (plan *Plan) Query(args ...interface{}) (*Rows, error) {
-	var valuesP *C.Datum
-	var nullsP *C.char
-	if len(args) > 0 {
-		values := make([]Datum, len(args))
-		nulls := make([]C.char, len(args))
-		for i, arg := range args {
-			values[i] = ToDatum(arg)
-			nulls[i] = C.char(' ')
-		}
-		valuesP = (*C.Datum)(unsafe.Pointer(&values[0]))
-		nullsP = &nulls[0]
-	}
-
+	valuesP, nullsP := spi_args(args)
 	plan.db.lock.Lock()
 	defer plan.db.lock.Unlock()
 	rv := C.SPI_execute_plan(plan.spi_plan, valuesP, nullsP, C.true, 0)
@@ -363,19 +373,7 @@ func (plan *Plan) Query(args ...interface{}) (*Rows, error) {
 //Query executes the prepared Plan with the provided args and returns
 //multiple Rows result, that can be iterated
 func (plan *Plan) QueryRow(args ...interface{}) (*Row, error) {
-	var valuesP *C.Datum
-	var nullsP *C.char
-	if len(args) > 0 {
-		values := make([]Datum, len(args))
-		nulls := make([]C.char, len(args))
-		for i, arg := range args {
-			values[i] = ToDatum(arg)
-			nulls[i] = C.char(' ')
-		}
-		valuesP = (*C.Datum)(unsafe.Pointer(&values[0]))
-		nullsP = &nulls[0]
-	}
-
+	valuesP, nullsP := spi_args(args)
 	plan.db.lock.Lock()
 	defer plan.db.lock.Unlock()
 	rv := C.SPI_execute_plan(plan.spi_plan, valuesP, nullsP, C.false, 1)
@@ -391,21 +389,29 @@ func (plan *Plan) QueryRow(args ...interface{}) (*Row, error) {
 
 //Exec executes a prepared query Plan with no result
 func (plan *Plan) Exec(args ...interface{}) error {
-	values := make([]Datum, len(args))
-	nulls := make([]C.char, len(args))
-	for i, arg := range args {
-		values[i] = ToDatum(arg)
-		nulls[i] = C.char(' ')
-	}
-
+	valuesP, nullsP := spi_args(args)
 	plan.db.lock.Lock()
 	defer plan.db.lock.Unlock()
-	rv := C.SPI_execute_plan(plan.spi_plan, (*C.Datum)(unsafe.Pointer(&values[0])), &nulls[0], C.false, 0)
+	rv := C.SPI_execute_plan(plan.spi_plan, valuesP, nullsP, C.false, 0)
 	if rv >= C.int(0) && C.SPI_processed == 1 {
 		return nil
 	} else {
 		return errors.New(fmt.Sprintf("Exec failed: %s", C.GoString(C.SPI_result_code_string(C.SPI_result))))
 	}
+}
+
+func spi_args(args ...interface{}) (valuesP *C.Datum, nullsP *C.char) {
+	if len(args) > 0 {
+		values := make([]Datum, len(args))
+		nulls := make([]C.char, len(args))
+		for i, arg := range args {
+			values[i] = ToDatum(arg)
+			nulls[i] = C.char(' ')
+		}
+		valuesP = (*C.Datum)(unsafe.Pointer(&values[0]))
+		nullsP = &nulls[0]
+	}
+	return valuesP, nullsP
 }
 
 //Rows represents the result of running a prepared Plan with Query
@@ -509,6 +515,11 @@ func ScanVal(oid C.Oid, val C.Datum, arg interface{}) error {
 			return errors.New("Column type is not uint64")
 		}
 		*targ = uint(C.datum_to_uint32(val))
+	case *bool:
+		if oid != C.BOOLOID {
+			return errors.New("Column type is not bool")
+		}
+		*targ = C.datum_to_bool(val) == C.true
 	case *time.Time:
 		switch oid {
 		case C.DATEOID:

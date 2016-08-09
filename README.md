@@ -1,23 +1,25 @@
 # plgo
 plgo is an "library" for easily creating PostgreSQL stored procedures extension in golang.
 
-For now not all type conversions (from PostgreSQL to Go types) are supported.
-
 Creating new stored procedures in plgo is easy:
 
-1. Copy the `pl.go` to your new extension directory
+1. Copy the `pl.go` to your new extension directory (optionally edit the CFLAGS path if it is different, use `pg_config --includedir-server`)
 
-2. Edit the section in pl.go marked as: //PG_FUNCTION declarations
+2. Create `funcdec.h` header file
+    
     Add all your new procedure names
     eg.
     ```c
-    PG_FUNCTION_INFO_V1(my_awesome_procedure)
+    PG_FUNCTION_INFO_V1(my_awesome_procedure);
+    PG_FUNCTION_INFO_V1(another_awesome_procedure);
     ```
 
 3. Create a file where your procedures will be declared
     eg. my_procedures.go:
     ```go
     package main
+
+    //this C block is required
 
     /*
     #include "postgres.h"
