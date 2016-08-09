@@ -1,8 +1,8 @@
 package main
 
 /*
-#cgo CFLAGS: -I/usr/include/postgresql/server
-#cgo LDFLAGS: -shared
+#cgo CFLAGS: -fPIC -I/usr/include/postgresql/server
+#cgo LDFLAGS: -fPIC -shared
 
 #include "postgres.h"
 #include "fmgr.h"
@@ -25,6 +25,10 @@ int varsize(void *var) {
 
 void elog_notice(char* string) {
     elog(NOTICE, string, "");
+}
+
+void elog_error(char* string) {
+    elog(ERROR, string, "");
 }
 
 HeapTuple get_heap_tuple(HeapTuple* ht, uint i) {
@@ -181,8 +185,6 @@ import (
 	"unsafe"
 )
 
-//TODO doc comments
-
 //this hase to be here
 func main() {}
 
@@ -210,16 +212,45 @@ func (db *DB) Close() error {
 }
 
 //ELog represents the elog io.Writter to use with Logger
-type elog struct {
-	sync.Mutex
+type ELogLevel int
+
+const (
+	NOTICE ELogLevel = iota
+	ERROR
+)
+
+type ELog struct {
+	lock  sync.Mutex
+	level ELogLevel
 }
 
-//elog notify implemented as io.Writter
-func (el *elog) Write(p []byte) (n int, err error) {
-	el.Lock()
-	C.elog_notice((*C.char)(unsafe.Pointer(&p[0])))
-	el.Unlock()
+//notify implemented as io.Writter
+func (e *ELog) Write(p []byte) (n int, err error) {
+	e.print(string(p))
 	return len(p), nil
+}
+
+func (e *ELog) print(str string) {
+	e.lock.Lock()
+	defer e.lock.Unlock()
+	switch e.level {
+	case NOTICE:
+		C.elog_notice(C.CString(str))
+	case ERROR:
+		C.elog_error(C.CString(str))
+	}
+}
+
+func (e *ELog) Print(args ...interface{}) {
+	e.print(fmt.Sprint(args...))
+}
+
+func (e *ELog) Printf(format string, args ...interface{}) {
+	e.print(fmt.Sprintf(format, args...))
+}
+
+func (e *ELog) Println(args ...interface{}) {
+	e.print(fmt.Sprintln(args...))
 }
 
 //FuncInfo is the type of parameters that all functions get
@@ -359,7 +390,7 @@ func (db *DB) Prepare(query string, types []string) (*Plan, error) {
 //Query executes the prepared Plan with the provided args and returns
 //multiple Rows result, that can be iterated
 func (plan *Plan) Query(args ...interface{}) (*Rows, error) {
-	valuesP, nullsP := spi_args(args)
+	valuesP, nullsP := spiArgs(args)
 	plan.db.lock.Lock()
 	defer plan.db.lock.Unlock()
 	rv := C.SPI_execute_plan(plan.spi_plan, valuesP, nullsP, C.true, 0)
@@ -373,7 +404,7 @@ func (plan *Plan) Query(args ...interface{}) (*Rows, error) {
 //Query executes the prepared Plan with the provided args and returns
 //multiple Rows result, that can be iterated
 func (plan *Plan) QueryRow(args ...interface{}) (*Row, error) {
-	valuesP, nullsP := spi_args(args)
+	valuesP, nullsP := spiArgs(args)
 	plan.db.lock.Lock()
 	defer plan.db.lock.Unlock()
 	rv := C.SPI_execute_plan(plan.spi_plan, valuesP, nullsP, C.false, 1)
@@ -389,7 +420,7 @@ func (plan *Plan) QueryRow(args ...interface{}) (*Row, error) {
 
 //Exec executes a prepared query Plan with no result
 func (plan *Plan) Exec(args ...interface{}) error {
-	valuesP, nullsP := spi_args(args)
+	valuesP, nullsP := spiArgs(args)
 	plan.db.lock.Lock()
 	defer plan.db.lock.Unlock()
 	rv := C.SPI_execute_plan(plan.spi_plan, valuesP, nullsP, C.false, 0)
@@ -400,7 +431,7 @@ func (plan *Plan) Exec(args ...interface{}) error {
 	}
 }
 
-func spi_args(args ...interface{}) (valuesP *C.Datum, nullsP *C.char) {
+func spiArgs(args ...interface{}) (valuesP *C.Datum, nullsP *C.char) {
 	if len(args) > 0 {
 		values := make([]Datum, len(args))
 		nulls := make([]C.char, len(args))
@@ -449,7 +480,7 @@ func (rows *Rows) Next() bool {
 func (rows *Rows) Scan(args ...interface{}) error {
 	for i, arg := range args {
 		val := C.get_col_as_datum(rows.current, rows.tupleDesc, C.int(i))
-		err := ScanVal(C.SPI_gettypeid(rows.tupleDesc, C.int(i+1)), val, arg)
+		err := scanVal(C.SPI_gettypeid(rows.tupleDesc, C.int(i+1)), val, arg)
 		if err != nil {
 			return err
 		}
@@ -465,7 +496,7 @@ type Row struct {
 func (row *Row) Scan(args ...interface{}) error {
 	for i, arg := range args {
 		val := C.get_col_as_datum(row.heapTuple, row.tupleDesc, C.int(i))
-		err := ScanVal(C.SPI_gettypeid(row.tupleDesc, C.int(i+1)), val, arg)
+		err := scanVal(C.SPI_gettypeid(row.tupleDesc, C.int(i+1)), val, arg)
 		if err != nil {
 			return err
 		}
@@ -473,51 +504,51 @@ func (row *Row) Scan(args ...interface{}) error {
 	return nil
 }
 
-func ScanVal(oid C.Oid, val C.Datum, arg interface{}) error {
+func scanVal(oid C.Oid, val C.Datum, arg interface{}) error {
 	switch targ := arg.(type) { //TODO error by converting
 	case *string:
 		if oid != C.TEXTOID {
-			return errors.New("Column type is not text")
+			return errors.New(fmt.Sprintf("Column type is not text %s", oid))
 		}
 		*targ = C.GoString(C.datum_to_cstring(val))
 	case *int16:
 		if oid != C.INT2OID {
-			return errors.New("Column type is not int16")
+			return errors.New(fmt.Sprintf("Column type is not int16 %s", oid))
 		}
 		*targ = int16(C.datum_to_int16(val))
 	case *uint16:
 		if oid != C.INT2OID {
-			return errors.New("Column type is not uint16")
+			return errors.New(fmt.Sprintf("Column type is not uint16 %s", oid))
 		}
 		*targ = uint16(C.datum_to_uint16(val))
 	case *int32:
 		if oid != C.INT4OID {
-			return errors.New("Column type is not int32")
+			return errors.New(fmt.Sprintf("Column type is not int32 %s", oid))
 		}
 		*targ = int32(C.datum_to_int32(val))
 	case *uint32:
 		if oid != C.INT4OID {
-			return errors.New("Column type is not uint32")
+			return errors.New(fmt.Sprintf("Column type is not uint32 %s", oid))
 		}
 		*targ = uint32(C.datum_to_uint32(val))
 	case *int64:
 		if oid != C.INT8OID {
-			return errors.New("Column type is not int64")
+			return errors.New(fmt.Sprintf("Column type is not int64 %s", oid))
 		}
 		*targ = int64(C.datum_to_int64(val))
 	case *int:
 		if oid != C.INT2OID && oid != C.INT4OID && oid != C.INT8OID {
-			return errors.New("Column type is not int")
+			return errors.New(fmt.Sprintf("Column type is not int %s", oid))
 		}
 		*targ = int(C.datum_to_int64(val))
 	case *uint:
 		if oid != C.INT2OID && oid != C.INT4OID && oid != C.INT8OID {
-			return errors.New("Column type is not uint64")
+			return errors.New(fmt.Sprintf("Column type is not uint64 %s", oid))
 		}
 		*targ = uint(C.datum_to_uint32(val))
 	case *bool:
 		if oid != C.BOOLOID {
-			return errors.New("Column type is not bool")
+			return errors.New(fmt.Sprintf("Column type is not bool %s", oid))
 		}
 		*targ = C.datum_to_bool(val) == C.true
 	case *time.Time:
@@ -532,10 +563,10 @@ func ScanVal(oid C.Oid, val C.Datum, arg interface{}) error {
 			t := C.datum_to_timetz(val)
 			*targ = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC).Add(time.Second * time.Duration(int64(t)/int64(C.USECS_PER_SEC))).Local()
 		default:
-			return errors.New("Unsupported time type")
+			return errors.New(fmt.Sprintf("Unsupported time type %s", oid))
 		}
 	default:
-		return errors.New("Unsupported type in Scan (" + reflect.TypeOf(arg).String() + ")")
+		return errors.New(fmt.Sprintf("Unsupported type in Scan (%s) %s", reflect.TypeOf(arg).String(), oid))
 	}
 	return nil
 }
