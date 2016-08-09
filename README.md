@@ -6,7 +6,7 @@ Creating new stored procedures in plgo is easy:
 1. Copy the `pl.go` to your new extension directory (optionally edit the CFLAGS path if it is different, use `pg_config --includedir-server`)
 
 2. Create `funcdec.h` header file
-    
+
     Add all your new procedure names
     eg.
     ```c
@@ -98,3 +98,11 @@ Creating new stored procedures in plgo is easy:
      foomehfoomehfoomehfoomehfoomehfoomehfoomehfoomehfoomehfoomeh
     (1 row)
     ```
+
+#TODO
+
+- run as trigger
+- generate docs
+- test everything!
+- more types! numeric, ranges, arrays, json
+- code generation tool?
