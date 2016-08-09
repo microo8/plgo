@@ -11,7 +11,7 @@ import (
 
 //export plgo_test
 func plgo_test(fcinfo *FuncInfo) Datum {
-	elog := &ELog{level: ERROR}
+	elog := &ELog{level: NOTICE}
 	t := log.New(elog, "", log.Lshortfile|log.Ltime)
 	TestConnection(t)
 	TestQueryOutputText(t)
@@ -42,47 +42,59 @@ func TestConnection(t *log.Logger) {
 func TestQueryOutputText(t *log.Logger) {
 	var tests = []struct {
 		query  string
-		args   []interface{}
+		args   []string
 		result string
 	}{
 		{"select '1'::text", nil, "1"},
 		{"select 1::text", nil, "1"},
-		{"select 'meh'::text", nil, "meh"},
+		{"select 'meh'", nil, "meh"},
 		{"select '+ľščťžýáíé'::text", nil, "+ľščťžýáíé"},
 		{"select lower('MEH')", nil, "meh"},
-		{"select concat('foo', $1, 'bar')", []interface{}{"meh"}, "foomehbar"},
+		{"select concat('foo', $1, 'bar')", []string{"meh"}, "foomehbar"},
 	}
 
 	db, err := Open()
 	if err != nil {
-		t.Fatal(err)
+		t.Fatal("error opening", err)
 	}
 	defer db.Close()
 
 	for _, test := range tests {
-		t.Println("Running", test)
-		args := make([]string, len(test.args))
-		for range test.args {
-			args = append(args, "text")
+		t.Print("running: ", test)
+		var args []string = nil
+		if len(test.args) > 0 {
+			args = make([]string, len(test.args))
+			for i := range test.args {
+				args[i] = "text"
+			}
 		}
+		t.Print(1)
 		stmt, err := db.Prepare(test.query, args)
+		t.Print(2)
 		if err != nil {
-			t.Fatal(err)
+			t.Fatal("prepare", err)
 		}
 		if stmt == nil {
 			t.Fatal("plan is nil!")
 		}
-		rows, err := stmt.Query(test.args...)
+		t.Print(3, test.args)
+		var rows *Rows
+		if len(test.args) > 0 {
+			rows, err = stmt.Query(test.args[0])
+		} else {
+			rows, err = stmt.Query()
+		}
+		t.Print(4)
 		for rows.Next() {
+			t.Print(5)
 			var res string
 			err = rows.Scan(&res)
 			if err != nil {
 				t.Fatal(test, err)
 			}
 			if res != test.result {
-				t.Fatal("result not equal", res, test.result)
+				t.Fatal("result not equal ", res, "!=", test.result)
 			}
 		}
-		t.Println("End", test)
 	}
 }

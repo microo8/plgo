@@ -1,7 +1,7 @@
 # plgo
 plgo is an "library" for easily creating PostgreSQL stored procedures extension in golang.
 
-Creating new stored procedures in plgo is easy:
+Creating new stored procedures with plgo is easy:
 
 1. Copy the `pl.go` to your new extension directory (optionally edit the CFLAGS path if it is different, use `pg_config --includedir-server`)
 
@@ -102,7 +102,6 @@ Creating new stored procedures in plgo is easy:
 #TODO
 
 - run as trigger
-- generate docs
 - test everything!
 - more types! numeric, ranges, arrays, json
 - code generation tool?

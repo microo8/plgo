@@ -172,6 +172,10 @@ bool datum_to_bool(Datum val) {
 	return DatumGetBool(val);
 }
 
+char* unknown_to_char(Datum val) {
+	return (char*)val;
+}
+
 //PG_FUNCTION declarations
 #include "funcdec.h"
 */
@@ -505,12 +509,16 @@ func (row *Row) Scan(args ...interface{}) error {
 }
 
 func scanVal(oid C.Oid, val C.Datum, arg interface{}) error {
-	switch targ := arg.(type) { //TODO error by converting
+	switch targ := arg.(type) {
 	case *string:
-		if oid != C.TEXTOID {
+		switch oid {
+		case C.TEXTOID:
+			*targ = C.GoString(C.datum_to_cstring(val))
+		case C.UNKNOWNOID:
+			*targ = C.GoString(C.unknown_to_char(val))
+		default:
 			return errors.New(fmt.Sprintf("Column type is not text %s", oid))
 		}
-		*targ = C.GoString(C.datum_to_cstring(val))
 	case *int16:
 		if oid != C.INT2OID {
 			return errors.New(fmt.Sprintf("Column type is not int16 %s", oid))
