@@ -27,41 +27,35 @@ func plgo_example(fcinfo *FuncInfo) Datum {
 	defer db.Close()
 
 	//preparing query statements
-	plan, err := db.Prepare("select * from test where id=$1", []string{"integer"})
-	if err != nil {
-		logger.Fatal(err)
-	}
-	insert, err := db.Prepare("insert into test (txt) values ($1)", []string{"text"})
+	plan, err := db.Prepare("select * from test", nil)
 	if err != nil {
 		logger.Fatal(err)
 	}
 
 	//running statements
-	err = insert.Exec("hello")
-	if err != nil {
-		logger.Fatal(err)
-	}
-	row, err := plan.QueryRow(1)
+	rows, err := plan.Query()
 	if err != nil {
 		logger.Fatal(err)
 	}
 
-	//scanning result row
-	var id int
-	var txt string
-	var date time.Time
-	var ti time.Time
-	var titz time.Time
-	err = row.Scan(&id, &txt, &date, &ti, &titz)
-	if err != nil {
-		logger.Fatal(err)
+	//scanning result rows
+	for rows.Next() {
+		var id int
+		var txt string
+		var date time.Time
+		var ti time.Time
+		var titz time.Time
+		err = rows.Scan(&id, &txt, &date, &ti, &titz)
+		if err != nil {
+			logger.Fatal(err)
+		}
+		logger.Printf("id: %d txt: %s date: %s time: %s timetz: %s", id, txt, date, ti, titz)
 	}
-	logger.Printf("id: %d txt: %s date: %s time: %s timetz: %s", id, txt, date, ti, titz)
 
 	//some magic with return value :)
 	var ret string
 	for i := 0; i < x; i++ {
-		ret += t + txt
+		ret += t //+ txt
 	}
 
 	//return value must be converted to Datum

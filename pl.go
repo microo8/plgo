@@ -37,7 +37,7 @@ Datum get_col_as_datum(HeapTuple ht, TupleDesc td, int colnumber) {
 }
 
 
-//Get value from function args
+//Get value from function args/////////////////////////////////////////////
 text* get_arg_text_p(PG_FUNCTION_ARGS, uint i) {
     return PG_GETARG_TEXT_P(i);
 }
@@ -70,15 +70,15 @@ DateADT get_arg_date(PG_FUNCTION_ARGS, uint i) {
 	return PG_GETARG_DATEADT(i);
 }
 
-TimeADT get_arg_time(PG_FUNCTION_ARGS, uint i) {
-	return PG_GETARG_TIMEADT(i);
+Timestamp get_arg_time(PG_FUNCTION_ARGS, uint i) {
+	return PG_GETARG_TIMESTAMP(i);
 }
 
-TimeTzADT* get_arg_timetz(PG_FUNCTION_ARGS, uint i) {
-	return PG_GETARG_TIMETZADT_P(i);
+TimestampTz get_arg_timetz(PG_FUNCTION_ARGS, uint i) {
+	return PG_GETARG_TIMESTAMPTZ(i);
 }
 
-//val to datum
+//val to datum//////////////////////////////////////////////////
 Datum void_datum(){
     PG_RETURN_VOID();
 }
@@ -112,14 +112,14 @@ Datum date_to_datum(DateADT val){
 }
 
 Datum time_to_datum(TimeADT val){
-	return TimeADTGetDatum(val);
+	return TimestampGetDatum(val);
 }
 
-Datum timetz_to_datum(TimeTzADT* val) {
-	return TimeTzADTPGetDatum(val);
+Datum timetz_to_datum(TimestampTz val) {
+	return TimestampTzGetDatum(val);
 }
 
-//Datum to ...
+//Datum to val //////////////////////////////////////////////////////////
 char* datum_to_cstring(Datum val) {
     return DatumGetCString(text_to_cstring((struct varlena *)val));
 }
@@ -148,12 +148,12 @@ DateADT datum_to_date(Datum val) {
 	return DatumGetDateADT(val);
 }
 
-TimeADT datum_to_time(Datum val) {
-	return DatumGetTimeADT(val);
+Timestamp datum_to_time(Datum val) {
+	return DatumGetTimestamp(val);
 }
 
-TimeTzADT* datum_to_timetz(Datum val) {
-	return DatumGetTimeTzADTP(val);
+TimestampTz datum_to_timetz(Datum val) {
+	return DatumGetTimestampTz(val);
 }
 
 //PG_FUNCTION declarations
@@ -261,8 +261,17 @@ func (fcinfo *FuncInfo) Uint(i uint) uint {
 
 func (fcinfo *FuncInfo) Date(i uint) time.Time {
 	date := C.get_arg_date(fcinfo, C.uint(i))
-	C.elog_notice(C.CString(fmt.Sprintf("time: %s", date)))
-	return time.Now()
+	return time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC).AddDate(0, 0, int(date))
+}
+
+func (fcinfo *FuncInfo) Time(i uint) time.Time {
+	t := C.get_arg_time(fcinfo, C.uint(i))
+	return time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC).Add(time.Second * time.Duration(int64(t)/int64(C.USECS_PER_SEC)))
+}
+
+func (fcinfo *FuncInfo) TimeTz(i uint) time.Time {
+	t := C.get_arg_timetz(fcinfo, C.uint(i))
+	return time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC).Add(time.Second * time.Duration(int64(t)/int64(C.USECS_PER_SEC))).Local()
 }
 
 //Datum is the return type of postgresql
@@ -292,7 +301,7 @@ func ToDatum(val interface{}) Datum {
 	case uint:
 		return (Datum)(C.uint32_to_datum(C.uint32(v)))
 	case time.Time:
-		return (Datum)(C.time_to_datum(C.TimeADT(v.Unix())))
+		return (Datum)(C.timetz_to_datum(C.TimestampTz(v.UTC().UnixNano())))
 	default:
 		return (Datum)(C.void_datum())
 	}
@@ -308,12 +317,16 @@ type Plan struct {
 //query - the SQL query
 //types - an array of strings with type names from postgresql of the prepared query
 func (db *DB) Prepare(query string, types []string) (*Plan, error) {
-	typeIds := make([]C.Oid, len(types))
-	var typmod C.int32
-	for i, t := range types {
-		C.parseTypeString(C.CString(t), &typeIds[i], &typmod, C.false)
+	var typeIdsP *C.Oid
+	if len(types) > 0 {
+		typeIds := make([]C.Oid, len(types))
+		var typmod C.int32
+		for i, t := range types {
+			C.parseTypeString(C.CString(t), &typeIds[i], &typmod, C.false)
+		}
+		typeIdsP = &typeIds[0]
 	}
-	cplan := C.SPI_prepare(C.CString(query), C.int(len(types)), &typeIds[0])
+	cplan := C.SPI_prepare(C.CString(query), C.int(len(types)), typeIdsP)
 	if cplan != nil {
 		return &Plan{spi_plan: cplan, db: db}, nil
 	} else {
@@ -324,16 +337,22 @@ func (db *DB) Prepare(query string, types []string) (*Plan, error) {
 //Query executes the prepared Plan with the provided args and returns
 //multiple Rows result, that can be iterated
 func (plan *Plan) Query(args ...interface{}) (*Rows, error) {
-	values := make([]Datum, len(args))
-	nulls := make([]C.char, len(args))
-	for i, arg := range args {
-		values[i] = ToDatum(arg)
-		nulls[i] = C.char(' ')
+	var valuesP *C.Datum
+	var nullsP *C.char
+	if len(args) > 0 {
+		values := make([]Datum, len(args))
+		nulls := make([]C.char, len(args))
+		for i, arg := range args {
+			values[i] = ToDatum(arg)
+			nulls[i] = C.char(' ')
+		}
+		valuesP = (*C.Datum)(unsafe.Pointer(&values[0]))
+		nullsP = &nulls[0]
 	}
 
 	plan.db.lock.Lock()
 	defer plan.db.lock.Unlock()
-	rv := C.SPI_execute_plan(plan.spi_plan, (*C.Datum)(unsafe.Pointer(&values[0])), &nulls[0], C.true, 0)
+	rv := C.SPI_execute_plan(plan.spi_plan, valuesP, nullsP, C.true, 0)
 	if rv == C.SPI_OK_SELECT && C.SPI_processed > 0 {
 		return newRows(C.SPI_tuptable.vals, C.SPI_tuptable.tupdesc, C.SPI_processed), nil
 	} else {
@@ -344,16 +363,22 @@ func (plan *Plan) Query(args ...interface{}) (*Rows, error) {
 //Query executes the prepared Plan with the provided args and returns
 //multiple Rows result, that can be iterated
 func (plan *Plan) QueryRow(args ...interface{}) (*Row, error) {
-	values := make([]Datum, len(args))
-	nulls := make([]C.char, len(args))
-	for i, arg := range args {
-		values[i] = ToDatum(arg)
-		nulls[i] = C.char(' ')
+	var valuesP *C.Datum
+	var nullsP *C.char
+	if len(args) > 0 {
+		values := make([]Datum, len(args))
+		nulls := make([]C.char, len(args))
+		for i, arg := range args {
+			values[i] = ToDatum(arg)
+			nulls[i] = C.char(' ')
+		}
+		valuesP = (*C.Datum)(unsafe.Pointer(&values[0]))
+		nullsP = &nulls[0]
 	}
 
 	plan.db.lock.Lock()
 	defer plan.db.lock.Unlock()
-	rv := C.SPI_execute_plan(plan.spi_plan, (*C.Datum)(unsafe.Pointer(&values[0])), &nulls[0], C.false, 1)
+	rv := C.SPI_execute_plan(plan.spi_plan, valuesP, nullsP, C.false, 1)
 	if rv >= C.int(0) && C.SPI_processed == 1 {
 		return &Row{
 			heapTuple: C.get_heap_tuple(C.SPI_tuptable.vals, C.uint(0)),
@@ -487,20 +512,16 @@ func ScanVal(oid C.Oid, val C.Datum, arg interface{}) error {
 	case *time.Time:
 		switch oid {
 		case C.DATEOID:
-			dateadt := int(C.datum_to_date(val))
-			*targ = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC).AddDate(0, 0, dateadt)
-			C.elog_notice(C.CString(fmt.Sprintf("date: %s", *targ)))
+			dateadt := C.datum_to_date(val)
+			*targ = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC).AddDate(0, 0, int(dateadt))
 		case C.TIMESTAMPOID:
 			t := C.datum_to_time(val)
 			*targ = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC).Add(time.Second * time.Duration(int64(t)/int64(C.USECS_PER_SEC)))
-			C.elog_notice(C.CString(fmt.Sprintf("time: %s", *targ)))
 		case C.TIMESTAMPTZOID:
-			C.elog_notice(C.CString("timetz"))
 			t := C.datum_to_timetz(val)
-			C.elog_notice(C.CString(fmt.Sprintf("timetz: %s", t)))
-			loc := time.FixedZone("", int(t.zone))
-			*targ = time.Date(2000, 1, 1, 0, 0, 0, 0, loc).Add(time.Second * time.Duration(int64(t.time)/int64(C.USECS_PER_SEC)))
-			C.elog_notice(C.CString(fmt.Sprintf("timetz: %s", *targ)))
+			*targ = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC).Add(time.Second * time.Duration(int64(t)/int64(C.USECS_PER_SEC))).Local()
+		default:
+			return errors.New("Unsupported time type")
 		}
 	default:
 		return errors.New("Unsupported type in Scan (" + reflect.TypeOf(arg).String() + ")")
