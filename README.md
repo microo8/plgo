@@ -102,6 +102,5 @@ Creating new stored procedures with plgo is easy:
 #TODO
 
 - run as trigger
-- test everything!
-- more types! numeric, ranges, arrays, json
+- range and array support
 - code generation tool?
