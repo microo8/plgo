@@ -14,6 +14,7 @@ package main
 #include "utils/elog.h"
 #include "executor/spi.h"
 #include "parser/parse_type.h"
+#include "commands/trigger.h"
 
 #ifdef PG_MODULE_MAGIC
 PG_MODULE_MAGIC;
@@ -38,6 +39,10 @@ HeapTuple get_heap_tuple(HeapTuple* ht, uint i) {
 Datum get_col_as_datum(HeapTuple ht, TupleDesc td, int colnumber) {
     bool isNull = true;
     return SPI_getbinval(ht, td, colnumber + 1, &isNull);
+}
+
+bool called_as_trigger(PG_FUNCTION_ARGS) {
+	return CALLED_AS_TRIGGER(fcinfo);
 }
 
 
@@ -254,11 +259,11 @@ type ELog struct {
 
 //notify implemented as io.Writter
 func (e *ELog) Write(p []byte) (n int, err error) {
-	e.print(string(p))
+	e._print(string(p))
 	return len(p), nil
 }
 
-func (e *ELog) print(str string) {
+func (e *ELog) _print(str string) {
 	e.lock.Lock()
 	defer e.lock.Unlock()
 	switch e.level {
@@ -270,89 +275,100 @@ func (e *ELog) print(str string) {
 }
 
 func (e *ELog) Print(args ...interface{}) {
-	e.print(fmt.Sprint(args...))
+	e._print(fmt.Sprint(args...))
 }
 
 func (e *ELog) Printf(format string, args ...interface{}) {
-	e.print(fmt.Sprintf(format, args...))
+	e._print(fmt.Sprintf(format, args...))
 }
 
 func (e *ELog) Println(args ...interface{}) {
-	e.print(fmt.Sprintln(args...))
+	e._print(fmt.Sprintln(args...))
 }
 
 //FuncInfo is the type of parameters that all functions get
 type FuncInfo C.FunctionCallInfoData
 
-//Returns i'th parameter of the function and converts it from text to string TODO: error?
+//Check if the function is called as trigger
+func (fcinfo *FuncInfo) CalledAsTrigger() bool {
+	return C.called_as_trigger(fcinfo) == C.true
+}
+
+//Returns i'th parameter of the function and converts it from text to string
 func (fcinfo *FuncInfo) Text(i uint) string {
 	return C.GoString(C.text_to_cstring(C.get_arg_text_p(fcinfo, C.uint(i))))
 }
 
-//Returns i'th parameter of the function and converts it from bytea to []byte TODO: error?
+//Returns i'th parameter of the function and converts it from bytea to []byte
 func (fcinfo *FuncInfo) Bytea(i uint) []byte {
 	b := C.get_arg_bytea_p(fcinfo, C.uint(i)) //TODO check this
 	return C.GoBytes(b, C.varsize(b)-C.VARHDRSZ)
 }
 
-//Returns i'th parameter of the function and converts it to int16 TODO: error?
+//Returns i'th parameter of the function and converts it to int16
 func (fcinfo *FuncInfo) Int16(i uint) int16 {
 	return int16(C.get_arg_int16(fcinfo, C.uint(i)))
 }
 
-//Returns i'th parameter of the function and converts it to uint16 TODO: error?
+//Returns i'th parameter of the function and converts it to uint16
 func (fcinfo *FuncInfo) Uint16(i uint) uint16 {
 	return uint16(C.get_arg_uint16(fcinfo, C.uint(i)))
 }
 
-//Returns i'th parameter of the function and converts it to int32 TODO: error?
+//Returns i'th parameter of the function and converts it to int32
 func (fcinfo *FuncInfo) Int32(i uint) int32 {
 	return int32(C.get_arg_int32(fcinfo, C.uint(i)))
 }
 
-//Returns i'th parameter of the function and converts it to uint32 TODO: error?
+//Returns i'th parameter of the function and converts it to uint32
 func (fcinfo *FuncInfo) Uint32(i uint) uint32 {
 	return uint32(C.get_arg_uint32(fcinfo, C.uint(i)))
 }
 
-//Returns i'th parameter of the function and converts it to int64 TODO: error?
+//Returns i'th parameter of the function and converts it to int64
 func (fcinfo *FuncInfo) Int64(i uint) int64 {
 	return int64(C.get_arg_int64(fcinfo, C.uint(i)))
 }
 
-//Returns i'th parameter of the function and converts it to int TODO: error?
+//Returns i'th parameter of the function and converts it to int
 func (fcinfo *FuncInfo) Int(i uint) int {
 	return int(C.get_arg_int64(fcinfo, C.uint(i)))
 }
 
-//Returns i'th parameter of the function and converts it to uint TODO: error?
+//Returns i'th parameter of the function and converts it to uint
 func (fcinfo *FuncInfo) Uint(i uint) uint {
 	return uint(C.get_arg_uint32(fcinfo, C.uint(i)))
 }
 
+//Returns i'th parameter of the function of the type date and converts it to time.Time
 func (fcinfo *FuncInfo) Date(i uint) time.Time {
 	date := C.get_arg_date(fcinfo, C.uint(i))
 	return time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC).AddDate(0, 0, int(date))
 }
 
+//Returns i'th parameter of the function of the type timestamp and converts it to time.Time
 func (fcinfo *FuncInfo) Time(i uint) time.Time {
 	t := C.get_arg_time(fcinfo, C.uint(i))
 	return time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC).Add(time.Second * time.Duration(int64(t)/int64(C.USECS_PER_SEC)))
 }
 
+//Returns i'th parameter of the function of the type timestamp with time zone and converts it to time.Time
 func (fcinfo *FuncInfo) TimeTz(i uint) time.Time {
 	t := C.get_arg_timetz(fcinfo, C.uint(i))
 	return time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC).Add(time.Second * time.Duration(int64(t)/int64(C.USECS_PER_SEC))).Local()
 }
 
+//Returns i'th parameter of the function and converts it to bool
 func (fcinfo *FuncInfo) Bool(i uint) bool {
 	return C.get_arg_bool(fcinfo, C.uint(i)) == C.true
 }
 
+//Returns i'th parameter of the function and converts it to float32
 func (fcinfo *FuncInfo) Real(i uint) float32 {
 	return float32(C.get_arg_float4(fcinfo, C.uint(i)))
 }
 
+//Returns i'th parameter of the function and converts it to float64
 func (fcinfo *FuncInfo) Double(i uint) float64 {
 	return float64(C.get_arg_float8(fcinfo, C.uint(i)))
 }
