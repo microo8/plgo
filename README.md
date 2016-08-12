@@ -1,5 +1,5 @@
 # plgo
-plgo is an "library" for easily creating PostgreSQL stored procedures extension in golang.
+plgo is an "library" for easily creating PostgreSQL stored procedures and triggers in golang.
 
 Creating new stored procedures with plgo is easy:
 
@@ -48,13 +48,13 @@ Creating new stored procedures with plgo is easy:
     	defer db.Close()
 
 	    //preparing query statement
-	    plan, err := db.Prepare("select * from test where id=$1", []string{"integer"})
+	    stmt, err := db.Prepare("select * from test where id=$1", []string{"integer"})
 	    if err != nil {
     		logger.Fatal(err)
 	    }
 
 	    //running statement
-	    row, err := plan.QueryRow(1)
+	    row, err := stmt.QueryRow(1)
 	    if err != nil {
     		logger.Fatal(err)
 	    }

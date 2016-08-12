@@ -15,6 +15,7 @@ package main
 #include "executor/spi.h"
 #include "parser/parse_type.h"
 #include "commands/trigger.h"
+#include "utils/rel.h"
 
 #ifdef PG_MODULE_MAGIC
 PG_MODULE_MAGIC;
@@ -44,7 +45,6 @@ Datum get_col_as_datum(HeapTuple ht, TupleDesc td, int colnumber) {
 bool called_as_trigger(PG_FUNCTION_ARGS) {
 	return CALLED_AS_TRIGGER(fcinfo);
 }
-
 
 //Get value from function args/////////////////////////////////////////////
 text* get_arg_text_p(PG_FUNCTION_ARGS, uint i) {
@@ -205,6 +205,43 @@ char* unknown_to_char(Datum val) {
 	return (char*)val;
 }
 
+//TriggerData functions/////////////////////////////////////////////
+bool trigger_fired_before(TriggerEvent tg_event) {
+	return TRIGGER_FIRED_BEFORE(tg_event);
+}
+
+bool trigger_fired_after(TriggerEvent tg_event) {
+	return TRIGGER_FIRED_AFTER(tg_event);
+}
+
+bool trigger_fired_instead(TriggerEvent tg_event) {
+	return TRIGGER_FIRED_INSTEAD(tg_event);
+}
+
+bool trigger_fired_for_row(TriggerEvent tg_event) {
+	return TRIGGER_FIRED_FOR_ROW(tg_event);
+}
+
+bool trigger_fired_for_statement(TriggerEvent tg_event) {
+	return TRIGGER_FIRED_FOR_STATEMENT(tg_event);
+}
+
+bool trigger_fired_by_insert(TriggerEvent tg_event) {
+	return TRIGGER_FIRED_BY_INSERT(tg_event);
+}
+
+bool trigger_fired_by_update(TriggerEvent tg_event) {
+	return TRIGGER_FIRED_BY_UPDATE(tg_event);
+}
+
+bool trigger_fired_by_delete(TriggerEvent tg_event) {
+	return TRIGGER_FIRED_BY_DELETE(tg_event);
+}
+
+bool trigger_fired_by_truncate(TriggerEvent tg_event) {
+	return TRIGGER_FIRED_BY_TRUNCATE(tg_event);
+}
+
 //PG_FUNCTION declarations
 #include "funcdec.h"
 */
@@ -294,6 +331,8 @@ func (fcinfo *FuncInfo) CalledAsTrigger() bool {
 	return C.called_as_trigger(fcinfo) == C.true
 }
 
+//TODO these functions must return argument also if the function is called as trigger
+
 //Returns i'th parameter of the function and converts it from text to string
 func (fcinfo *FuncInfo) Text(i uint) string {
 	return C.GoString(C.text_to_cstring(C.get_arg_text_p(fcinfo, C.uint(i))))
@@ -301,7 +340,7 @@ func (fcinfo *FuncInfo) Text(i uint) string {
 
 //Returns i'th parameter of the function and converts it from bytea to []byte
 func (fcinfo *FuncInfo) Bytea(i uint) []byte {
-	b := C.get_arg_bytea_p(fcinfo, C.uint(i)) //TODO check this
+	b := C.get_arg_bytea_p(fcinfo, C.uint(i)) //TODO test this
 	return C.GoBytes(b, C.varsize(b)-C.VARHDRSZ)
 }
 
@@ -371,6 +410,77 @@ func (fcinfo *FuncInfo) Real(i uint) float32 {
 //Returns i'th parameter of the function and converts it to float64
 func (fcinfo *FuncInfo) Double(i uint) float64 {
 	return float64(C.get_arg_float8(fcinfo, C.uint(i)))
+}
+
+//Returns Trigger data, if the function was called as trigger, else nil
+func (fcinfo *FuncInfo) TriggerData() *TriggerData {
+	if !fcinfo.CalledAsTrigger() {
+		return nil
+	}
+	trigdata := (*C.TriggerData)(unsafe.Pointer(fcinfo.context))
+	return &TriggerData{
+		tg_event:    trigdata.tg_event,
+		tg_relation: trigdata.tg_relation,
+		tg_trigger:  trigdata.tg_trigger,
+		OldRow:      &Row{trigdata.tg_relation.rd_att, trigdata.tg_trigtuple},
+		NewRow:      &Row{trigdata.tg_relation.rd_att, trigdata.tg_newtuple},
+	}
+}
+
+//Represents the data passed by the trigger manager
+type TriggerData struct {
+	tg_event    C.TriggerEvent
+	tg_relation C.Relation
+	tg_trigger  *C.Trigger
+	OldRow      *Row
+	NewRow      *Row
+	//Buffer        tg_trigtuplebuf;
+	//Buffer        tg_newtuplebuf;
+}
+
+//Returns true if the trigger fired before the operation.
+func (td *TriggerData) FiredBefore() bool {
+	return C.trigger_fired_before(td.tg_event) == C.true
+}
+
+//Returns true if the trigger fired after the operation.
+func (td *TriggerData) FiredAfter() bool {
+	return C.trigger_fired_after(td.tg_event) == C.true
+}
+
+//Returns true if the trigger fired instead of the operation.
+func (td *TriggerData) FiredInstead() bool {
+	return C.trigger_fired_instead(td.tg_event) == C.true
+}
+
+//Returns true if the trigger fired for a row-level event.
+func (td *TriggerData) FiredForRow() bool {
+	return C.trigger_fired_for_row(td.tg_event) == C.true
+}
+
+//Returns true if the trigger fired for a statement-level event.
+func (td *TriggerData) FiredForStatement() bool {
+	return C.trigger_fired_for_statement(td.tg_event) == C.true
+}
+
+//Returns true if the trigger was fired by an INSERT command.
+func (td *TriggerData) FiredByInsert() bool {
+	return C.trigger_fired_by_insert(td.tg_event) == C.true
+}
+
+//Returns true if the trigger was fired by an UPDATE command.
+func (td *TriggerData) FiredByUpdate() bool {
+	return C.trigger_fired_by_update(td.tg_event) == C.true
+}
+
+//Returns true if the trigger was fired by a DELETE command.
+func (td *TriggerData) FiredByDelete() bool {
+	return C.trigger_fired_by_delete(td.tg_event) == C.true
+}
+
+//Returns true if the trigger was fired by a TRUNCATE command.
+func (td *TriggerData) FiredByTruncate() bool {
+	return C.trigger_fired_by_truncate(td.tg_event) == C.true
 }
 
 //Datum is the return type of postgresql
