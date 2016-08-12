@@ -104,3 +104,4 @@ Creating new stored procedures with plgo is easy:
 - run as trigger
 - range and array support
 - code generation tool?
+- Background Worker Processes!
