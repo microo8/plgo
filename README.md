@@ -34,8 +34,9 @@ Creating new stored procedures with plgo is easy:
     //export my_awesome_procedure
     func my_awesome_procedure(fcinfo *FuncInfo) Datum {
 	    //getting the function parameters
-	    t := fcinfo.Text(0)
-	    x := fcinfo.Int(1)
+        var t string
+        var x int
+        fcinfo.Scan(&t, &x)
 
 	    //Creating notice logger
 	    logger := log.New(&elog{}, "", log.Ltime|log.Lshortfile)

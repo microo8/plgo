@@ -35,6 +35,20 @@ func plgo_test(fcinfo *FuncInfo) Datum {
 	return ToDatum(nil)
 }
 
+//export plgo_concat
+func plgo_concat(fcinfo *FuncInfo) Datum {
+	t := log.New(&ELog{level: NOTICE}, "", log.Lshortfile|log.Ltime)
+	var a string
+	var b string
+	t.Print("SCAAAAAN")
+	err := fcinfo.Scan(&a, &b)
+	if err != nil {
+		t.Print("fcinfo.Scan", err)
+	}
+	t.Printf("args: '%s' and '%s'", a, b)
+	return ToDatum(a + b)
+}
+
 //export plgo_trigger
 func plgo_trigger(fcinfo *FuncInfo) Datum {
 	t := log.New(&ELog{level: NOTICE}, "", log.Lshortfile|log.Ltime)

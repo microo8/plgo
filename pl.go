@@ -34,6 +34,10 @@ void elog_error(char* string) {
     elog(ERROR, string, "");
 }
 
+Datum get_arg(PG_FUNCTION_ARGS, uint i) {
+	return PG_GETARG_DATUM(i);
+}
+
 HeapTuple get_heap_tuple(HeapTuple* ht, uint i) {
     return ht[i];
 }
@@ -54,59 +58,6 @@ Datum get_heap_getattr(HeapTuple ht, uint i, TupleDesc td) {
 	Datum ret = heap_getattr(ht, i, td, &isNull);
 	if (isNull) PG_RETURN_VOID();
 	return ret;
-}
-
-//Get value from function args/////////////////////////////////////////////
-text* get_arg_text_p(PG_FUNCTION_ARGS, uint i) {
-    return PG_GETARG_TEXT_P(i);
-}
-
-bytea* get_arg_bytea_p(PG_FUNCTION_ARGS, uint i) {
-    return PG_GETARG_BYTEA_P(i);
-}
-
-int16 get_arg_int16(PG_FUNCTION_ARGS, uint i) {
-    return PG_GETARG_INT16(i);
-}
-
-uint16 get_arg_uint16(PG_FUNCTION_ARGS, uint i) {
-    return PG_GETARG_UINT32(i);
-}
-
-int32 get_arg_int32(PG_FUNCTION_ARGS, uint i) {
-    return PG_GETARG_INT32(i);
-}
-
-uint32 get_arg_uint32(PG_FUNCTION_ARGS, uint i) {
-    return PG_GETARG_UINT32(i);
-}
-
-int64 get_arg_int64(PG_FUNCTION_ARGS, uint i) {
-    return PG_GETARG_INT64(i);
-}
-
-DateADT get_arg_date(PG_FUNCTION_ARGS, uint i) {
-	return PG_GETARG_DATEADT(i);
-}
-
-Timestamp get_arg_time(PG_FUNCTION_ARGS, uint i) {
-	return PG_GETARG_TIMESTAMP(i);
-}
-
-TimestampTz get_arg_timetz(PG_FUNCTION_ARGS, uint i) {
-	return PG_GETARG_TIMESTAMPTZ(i);
-}
-
-bool get_arg_bool(PG_FUNCTION_ARGS, uint i) {
-	return PG_GETARG_BOOL(i);
-}
-
-float get_arg_float4(PG_FUNCTION_ARGS, uint i) {
-	return PG_GETARG_FLOAT4(i);
-}
-
-double get_arg_float8(PG_FUNCTION_ARGS, uint i) {
-	return PG_GETARG_FLOAT8(i);
 }
 
 //val to datum//////////////////////////////////////////////////
@@ -260,7 +211,6 @@ bool trigger_fired_by_truncate(TriggerEvent tg_event) {
 	return TRIGGER_FIRED_BY_TRUNCATE(tg_event);
 }
 
-//PG_FUNCTION declarations
 #include "funcdec.h"
 */
 import "C"
@@ -273,8 +223,11 @@ import (
 	"unsafe"
 )
 
-//this hase to be here
+//this has to be here
 func main() {}
+
+//Datum is the return type of postgresql
+type Datum C.Datum
 
 //DB connection
 type DB struct {
@@ -349,85 +302,24 @@ func (fcinfo *FuncInfo) CalledAsTrigger() bool {
 	return C.called_as_trigger(fcinfo) == C.true
 }
 
-//TODO these functions must return argument also if the function is called as trigger
+//TODO Scan must return argument also if the function is called as trigger
 
-//Returns i'th parameter of the function and converts it from text to string
-func (fcinfo *FuncInfo) Text(i uint) string {
-	return C.GoString(C.text_to_cstring(C.get_arg_text_p(fcinfo, C.uint(i))))
-}
-
-//Returns i'th parameter of the function and converts it from bytea to []byte
-func (fcinfo *FuncInfo) Bytea(i uint) []byte {
-	b := C.get_arg_bytea_p(fcinfo, C.uint(i)) //TODO test this
-	return C.GoBytes(b, C.varsize(b)-C.VARHDRSZ)
-}
-
-//Returns i'th parameter of the function and converts it to int16
-func (fcinfo *FuncInfo) Int16(i uint) int16 {
-	return int16(C.get_arg_int16(fcinfo, C.uint(i)))
-}
-
-//Returns i'th parameter of the function and converts it to uint16
-func (fcinfo *FuncInfo) Uint16(i uint) uint16 {
-	return uint16(C.get_arg_uint16(fcinfo, C.uint(i)))
-}
-
-//Returns i'th parameter of the function and converts it to int32
-func (fcinfo *FuncInfo) Int32(i uint) int32 {
-	return int32(C.get_arg_int32(fcinfo, C.uint(i)))
-}
-
-//Returns i'th parameter of the function and converts it to uint32
-func (fcinfo *FuncInfo) Uint32(i uint) uint32 {
-	return uint32(C.get_arg_uint32(fcinfo, C.uint(i)))
-}
-
-//Returns i'th parameter of the function and converts it to int64
-func (fcinfo *FuncInfo) Int64(i uint) int64 {
-	return int64(C.get_arg_int64(fcinfo, C.uint(i)))
-}
-
-//Returns i'th parameter of the function and converts it to int
-func (fcinfo *FuncInfo) Int(i uint) int {
-	return int(C.get_arg_int64(fcinfo, C.uint(i)))
-}
-
-//Returns i'th parameter of the function and converts it to uint
-func (fcinfo *FuncInfo) Uint(i uint) uint {
-	return uint(C.get_arg_uint32(fcinfo, C.uint(i)))
-}
-
-//Returns i'th parameter of the function of the type date and converts it to time.Time
-func (fcinfo *FuncInfo) Date(i uint) time.Time {
-	date := C.get_arg_date(fcinfo, C.uint(i))
-	return time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC).AddDate(0, 0, int(date))
-}
-
-//Returns i'th parameter of the function of the type timestamp and converts it to time.Time
-func (fcinfo *FuncInfo) Time(i uint) time.Time {
-	t := C.get_arg_time(fcinfo, C.uint(i))
-	return time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC).Add(time.Second * time.Duration(int64(t)/int64(C.USECS_PER_SEC)))
-}
-
-//Returns i'th parameter of the function of the type timestamp with time zone and converts it to time.Time
-func (fcinfo *FuncInfo) TimeTz(i uint) time.Time {
-	t := C.get_arg_timetz(fcinfo, C.uint(i))
-	return time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC).Add(time.Second * time.Duration(int64(t)/int64(C.USECS_PER_SEC))).Local()
-}
-
-//Returns i'th parameter of the function and converts it to bool
-func (fcinfo *FuncInfo) Bool(i uint) bool {
-	return C.get_arg_bool(fcinfo, C.uint(i)) == C.true
-}
-
-//Returns i'th parameter of the function and converts it to float32
-func (fcinfo *FuncInfo) Real(i uint) float32 {
-	return float32(C.get_arg_float4(fcinfo, C.uint(i)))
-}
-
-//Returns i'th parameter of the function and converts it to float64
-func (fcinfo *FuncInfo) Double(i uint) float64 {
-	return float64(C.get_arg_float8(fcinfo, C.uint(i)))
+//Scan sets the args to the function parameter values (converted from PostgreSQL types to Go types)
+func (fcinfo *FuncInfo) Scan(args ...interface{}) error {
+	e := new(ELog)
+	for i, arg := range args {
+		e.Print(i, 0)
+		funcArg := C.get_arg(fcinfo, C.uint(i))
+		e.Print(i, 1)
+		argOid := C.get_call_expr_argtype(fcinfo.flinfo.fn_expr, C.int(i))
+		e.Print(i, 2)
+		err := scanVal(argOid, "", funcArg, arg)
+		e.Print(i, 3)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 //Returns Trigger data, if the function was called as trigger, else nil
@@ -527,12 +419,10 @@ func (row *TriggerRow) Scan(args ...interface{}) error {
 	return nil
 }
 
+//Sets the i'th value in the row
 func (row *TriggerRow) Set(i int, val interface{}) {
 	row.attrs[i] = (C.Datum)(ToDatum(val))
 }
-
-//Datum is the return type of postgresql
-type Datum C.Datum
 
 //ToDatum returns the Postgresql C type from Golang type
 func ToDatum(val interface{}) Datum {
