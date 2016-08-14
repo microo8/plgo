@@ -155,7 +155,6 @@ CREATE TRIGGER my_awesome_trigger
 
 #TODO
 
-- run as trigger
 - range and array support
 - code generation tool?
 - Background Worker Processes!
