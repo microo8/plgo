@@ -24,9 +24,35 @@ func plgo_test(fcinfo *FuncInfo) Datum {
 	TestQueryOutputFloat32(t)
 	TestQueryOutputFloat64(t)
 
+	db, _ := Open()
+	defer db.Close()
+
+	update, _ := db.Prepare("update test set txt='abc'", []string{})
+	update.Exec()
+
 	elog.level = NOTICE
 	t.Println("TEST end")
 	return ToDatum(nil)
+}
+
+//export plgo_trigger
+func plgo_trigger(fcinfo *FuncInfo) Datum {
+	t := log.New(&ELog{level: NOTICE}, "", log.Lshortfile|log.Ltime)
+
+	if !fcinfo.CalledAsTrigger() {
+		t.Fatal("Not called as trigger")
+	}
+
+	triggerData := fcinfo.TriggerData()
+	if !triggerData.FiredBefore() && !triggerData.FiredByUpdate() {
+		t.Fatal("function not called BEFORE UPDATE :-O")
+	}
+
+	triggerData.NewRow.Set(4, time.Now().Add(-time.Hour*time.Duration(24)))
+
+	//return ToDatum(nil) //nothing changed in the row
+	//return ToDatum(triggerData.OldRow) //nothing changed in the row
+	return ToDatum(triggerData.NewRow) //the new row will be changed
 }
 
 func TestConnection(t *log.Logger) {

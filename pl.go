@@ -1,12 +1,13 @@
 package main
 
 /*
-#cgo CFLAGS: -fPIC -I/usr/include/postgresql/server
-#cgo LDFLAGS: -fPIC -shared
+#cgo CFLAGS: -I/usr/include/postgresql/server
+#cgo LDFLAGS: -shared
 
 #include "postgres.h"
 #include "fmgr.h"
 #include "pgtime.h"
+#include "access/htup_details.h"
 #include "catalog/pg_type.h"
 #include "utils/builtins.h"
 #include "utils/date.h"
@@ -38,12 +39,21 @@ HeapTuple get_heap_tuple(HeapTuple* ht, uint i) {
 }
 
 Datum get_col_as_datum(HeapTuple ht, TupleDesc td, int colnumber) {
-    bool isNull = true;
-    return SPI_getbinval(ht, td, colnumber + 1, &isNull);
+    bool isNull;
+    Datum ret = SPI_getbinval(ht, td, colnumber + 1, &isNull);
+	if (isNull) PG_RETURN_VOID();
+	return ret;
 }
 
 bool called_as_trigger(PG_FUNCTION_ARGS) {
 	return CALLED_AS_TRIGGER(fcinfo);
+}
+
+Datum get_heap_getattr(HeapTuple ht, uint i, TupleDesc td) {
+	bool isNull;
+	Datum ret = heap_getattr(ht, i, td, &isNull);
+	if (isNull) PG_RETURN_VOID();
+	return ret;
 }
 
 //Get value from function args/////////////////////////////////////////////
@@ -152,6 +162,10 @@ Datum float8_to_datum(double val) {
 	return Float8GetDatum(val);
 }
 
+Datum heap_tuple_to_datum(HeapTuple val) {
+	return PointerGetDatum(val);
+}
+
 //Datum to val //////////////////////////////////////////////////////////
 char* datum_to_cstring(Datum val) {
     return DatumGetCString(text_to_cstring((struct varlena *)val));
@@ -199,6 +213,10 @@ float datum_to_float4(Datum val) {
 
 double datum_to_float8(Datum val) {
 	return DatumGetFloat8(val);
+}
+
+HeapTuple datum_to_heap_tuple(Datum val) {
+	return (HeapTuple) DatumGetPointer(val);
 }
 
 char* unknown_to_char(Datum val) {
@@ -422,8 +440,8 @@ func (fcinfo *FuncInfo) TriggerData() *TriggerData {
 		tg_event:    trigdata.tg_event,
 		tg_relation: trigdata.tg_relation,
 		tg_trigger:  trigdata.tg_trigger,
-		OldRow:      &Row{trigdata.tg_relation.rd_att, trigdata.tg_trigtuple},
-		NewRow:      &Row{trigdata.tg_relation.rd_att, trigdata.tg_newtuple},
+		OldRow:      newTriggerRow(trigdata.tg_relation.rd_att, trigdata.tg_trigtuple),
+		NewRow:      newTriggerRow(trigdata.tg_relation.rd_att, trigdata.tg_newtuple),
 	}
 }
 
@@ -432,8 +450,8 @@ type TriggerData struct {
 	tg_event    C.TriggerEvent
 	tg_relation C.Relation
 	tg_trigger  *C.Trigger
-	OldRow      *Row
-	NewRow      *Row
+	OldRow      *TriggerRow
+	NewRow      *TriggerRow
 	//Buffer        tg_trigtuplebuf;
 	//Buffer        tg_newtuplebuf;
 }
@@ -483,6 +501,36 @@ func (td *TriggerData) FiredByTruncate() bool {
 	return C.trigger_fired_by_truncate(td.tg_event) == C.true
 }
 
+//TriggerRow is used in TriggerData as NewRow and OldRow
+type TriggerRow struct {
+	tupleDesc C.TupleDesc
+	attrs     []C.Datum
+}
+
+func newTriggerRow(tupleDesc C.TupleDesc, heapTuple C.HeapTuple) *TriggerRow {
+	row := &TriggerRow{tupleDesc, make([]C.Datum, int(tupleDesc.natts))}
+	for i := 0; i < int(tupleDesc.natts); i++ {
+		row.attrs[i] = C.get_heap_getattr(heapTuple, C.uint(i+1), tupleDesc)
+	}
+	return row
+}
+
+func (row *TriggerRow) Scan(args ...interface{}) error {
+	for i, arg := range args {
+		oid := C.SPI_gettypeid(row.tupleDesc, C.int(i+1))
+		typeName := C.SPI_gettype(row.tupleDesc, C.int(i+1))
+		err := scanVal(oid, C.GoString(typeName), row.attrs[i], arg)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (row *TriggerRow) Set(i int, val interface{}) {
+	row.attrs[i] = (C.Datum)(ToDatum(val))
+}
+
 //Datum is the return type of postgresql
 type Datum C.Datum
 
@@ -521,6 +569,17 @@ func ToDatum(val interface{}) Datum {
 		} else {
 			return (Datum)(C.bool_to_datum(C.false))
 		}
+	case *TriggerRow:
+		isNull := make([]C.bool, len(v.attrs))
+		for i, attr := range v.attrs {
+			if attr == (C.Datum)(ToDatum(nil)) {
+				isNull[i] = C.true
+			} else {
+				isNull[i] = C.false
+			}
+		}
+		heapTuple := C.heap_form_tuple(v.tupleDesc, &v.attrs[0], &isNull[0])
+		return (Datum)(C.heap_tuple_to_datum(heapTuple))
 	default:
 		return (Datum)(C.void_datum())
 	}
@@ -656,6 +715,7 @@ func (rows *Rows) Scan(args ...interface{}) error {
 	return nil
 }
 
+//Row represents a single row from running a query
 type Row struct {
 	tupleDesc C.TupleDesc
 	heapTuple C.HeapTuple

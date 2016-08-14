@@ -99,6 +99,60 @@ Creating new stored procedures with plgo is easy:
     (1 row)
     ```
 
+##Triggers
+
+Triggers are also easy:
+
+```go
+//export plgo_trigger
+func plgo_trigger(fcinfo *FuncInfo) Datum {
+    //logger
+	t := log.New(&ELog{level: NOTICE}, "", log.Lshortfile|log.Ltime)
+
+    //this must be true, else the function is not called as a trigger
+	if !fcinfo.CalledAsTrigger() {
+		t.Fatal("Not called as trigger")
+	}
+
+    //use TriggerData to manipulate the Old and New row
+	triggerData := fcinfo.TriggerData()
+
+    //test if the trigger is called before update event
+	if !triggerData.FiredBefore() && !triggerData.FiredByUpdate(){
+		t.Fatal("function not called BEFORE UPDATE :-O")
+	}
+
+    //setting an timestamp collumn to the yesterdays time (it's just an example)
+	triggerData.NewRow.Set(4, time.Now().Add(-time.Hour*time.Duration(24)))
+
+	//return ToDatum(nil) //nothing changed in the row
+	//return ToDatum(triggerData.OldRow) //nothing changed in the row
+	return ToDatum(triggerData.NewRow) //the new row will be changed
+}
+```
+
+also you must create the trigger function in PostgreSQL:
+
+```sql
+CREATE OR REPLACE FUNCTION public.plgo_trigger()
+  RETURNS trigger AS
+'$libdir/plgo_test', 'plgo_trigger'
+  LANGUAGE c IMMUTABLE STRICT
+  COST 1;
+```
+
+
+and set the trigger to an table event:
+
+```sql
+CREATE TRIGGER my_awesome_trigger
+  BEFORE UPDATE
+  ON public.test
+  FOR EACH ROW
+  EXECUTE PROCEDURE public.plgo_trigger();
+```
+
+
 #TODO
 
 - run as trigger
