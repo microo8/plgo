@@ -11,6 +11,7 @@ import (
 	"time"
 )
 
+//PLGoTest testing function
 //export PLGoTest
 func PLGoTest(fcinfo *FuncInfo) Datum {
 	elog := &ELog{level: NOTICE}
@@ -35,6 +36,7 @@ func PLGoTest(fcinfo *FuncInfo) Datum {
 	return ToDatum(nil)
 }
 
+//PLGoConcat concatenates two strings
 //export PLGoConcat
 func PLGoConcat(fcinfo *FuncInfo) Datum {
 	t := log.New(&ELog{level: NOTICE}, "", log.Lshortfile|log.Ltime)
@@ -49,6 +51,7 @@ func PLGoConcat(fcinfo *FuncInfo) Datum {
 	return ToDatum(a + b)
 }
 
+//PLGoTrigger is an trigger test function
 //export PLGoTrigger
 func PLGoTrigger(fcinfo *FuncInfo) Datum {
 	t := log.New(&ELog{level: NOTICE}, "", log.Lshortfile|log.Ltime)
