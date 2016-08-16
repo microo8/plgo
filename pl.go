@@ -234,7 +234,7 @@ type DB struct {
 	lock sync.Mutex
 }
 
-//Returns DB connection and runs SPI_connect
+//Open returns DB connection and runs SPI_connect
 func Open() (*DB, error) {
 	if C.SPI_connect() != C.SPI_OK_CONNECT {
 		return nil, errors.New("can't connect")
@@ -242,7 +242,7 @@ func Open() (*DB, error) {
 	return new(DB), nil
 }
 
-//Closes the DB connection
+//Close closes the DB connection
 func (db *DB) Close() error {
 	db.lock.Lock()
 	defer db.lock.Unlock()
@@ -252,20 +252,22 @@ func (db *DB) Close() error {
 	return nil
 }
 
-//ELog represents the elog io.Writter to use with Logger
+//ELogLevel TODO
 type ELogLevel int
 
+//ELogLevel constants
 const (
 	NOTICE ELogLevel = iota
 	ERROR
 )
 
+//ELog represents the elog io.Writter to use with Logger
 type ELog struct {
 	lock  sync.Mutex
 	level ELogLevel
 }
 
-//notify implemented as io.Writter
+//Write is an notify implemented as io.Writter
 func (e *ELog) Write(p []byte) (n int, err error) {
 	e._print(string(p))
 	return len(p), nil
@@ -282,14 +284,17 @@ func (e *ELog) _print(str string) {
 	}
 }
 
+//Print writes the arguments to elog
 func (e *ELog) Print(args ...interface{}) {
 	e._print(fmt.Sprint(args...))
 }
 
+//Printf writes formated arguments to elog
 func (e *ELog) Printf(format string, args ...interface{}) {
 	e._print(fmt.Sprintf(format, args...))
 }
 
+//Println writes the arguments to elog as new line
 func (e *ELog) Println(args ...interface{}) {
 	e._print(fmt.Sprintln(args...))
 }
@@ -297,7 +302,7 @@ func (e *ELog) Println(args ...interface{}) {
 //FuncInfo is the type of parameters that all functions get
 type FuncInfo C.FunctionCallInfoData
 
-//Check if the function is called as trigger
+//CalledAsTrigger checks if the function is called as trigger
 func (fcinfo *FuncInfo) CalledAsTrigger() bool {
 	return C.called_as_trigger(fcinfo) == C.true
 }
@@ -322,75 +327,75 @@ func (fcinfo *FuncInfo) Scan(args ...interface{}) error {
 	return nil
 }
 
-//Returns Trigger data, if the function was called as trigger, else nil
+//TriggerData returns Trigger data, if the function was called as trigger, else nil
 func (fcinfo *FuncInfo) TriggerData() *TriggerData {
 	if !fcinfo.CalledAsTrigger() {
 		return nil
 	}
 	trigdata := (*C.TriggerData)(unsafe.Pointer(fcinfo.context))
 	return &TriggerData{
-		tg_event:    trigdata.tg_event,
-		tg_relation: trigdata.tg_relation,
-		tg_trigger:  trigdata.tg_trigger,
-		OldRow:      newTriggerRow(trigdata.tg_relation.rd_att, trigdata.tg_trigtuple),
-		NewRow:      newTriggerRow(trigdata.tg_relation.rd_att, trigdata.tg_newtuple),
+		tgEvent:    trigdata.tg_event,
+		tgRelation: trigdata.tg_relation,
+		tgTrigger:  trigdata.tg_trigger,
+		OldRow:     newTriggerRow(trigdata.tg_relation.rd_att, trigdata.tg_trigtuple),
+		NewRow:     newTriggerRow(trigdata.tg_relation.rd_att, trigdata.tg_newtuple),
 	}
 }
 
-//Represents the data passed by the trigger manager
+//TriggerData represents the data passed by the trigger manager
 type TriggerData struct {
-	tg_event    C.TriggerEvent
-	tg_relation C.Relation
-	tg_trigger  *C.Trigger
-	OldRow      *TriggerRow
-	NewRow      *TriggerRow
+	tgEvent    C.TriggerEvent
+	tgRelation C.Relation
+	tgTrigger  *C.Trigger
+	OldRow     *TriggerRow
+	NewRow     *TriggerRow
 	//Buffer        tg_trigtuplebuf;
 	//Buffer        tg_newtuplebuf;
 }
 
-//Returns true if the trigger fired before the operation.
+//FiredBefore returns true if the trigger fired before the operation.
 func (td *TriggerData) FiredBefore() bool {
-	return C.trigger_fired_before(td.tg_event) == C.true
+	return C.trigger_fired_before(td.tgEvent) == C.true
 }
 
-//Returns true if the trigger fired after the operation.
+//FiredAfter returns true if the trigger fired after the operation.
 func (td *TriggerData) FiredAfter() bool {
-	return C.trigger_fired_after(td.tg_event) == C.true
+	return C.trigger_fired_after(td.tgEvent) == C.true
 }
 
-//Returns true if the trigger fired instead of the operation.
+//FiredInstead returns true if the trigger fired instead of the operation.
 func (td *TriggerData) FiredInstead() bool {
-	return C.trigger_fired_instead(td.tg_event) == C.true
+	return C.trigger_fired_instead(td.tgEvent) == C.true
 }
 
-//Returns true if the trigger fired for a row-level event.
+//FiredForRow returns true if the trigger fired for a row-level event.
 func (td *TriggerData) FiredForRow() bool {
-	return C.trigger_fired_for_row(td.tg_event) == C.true
+	return C.trigger_fired_for_row(td.tgEvent) == C.true
 }
 
-//Returns true if the trigger fired for a statement-level event.
+//FiredForStatement returns true if the trigger fired for a statement-level event.
 func (td *TriggerData) FiredForStatement() bool {
-	return C.trigger_fired_for_statement(td.tg_event) == C.true
+	return C.trigger_fired_for_statement(td.tgEvent) == C.true
 }
 
-//Returns true if the trigger was fired by an INSERT command.
+//FiredByInsert returns true if the trigger was fired by an INSERT command.
 func (td *TriggerData) FiredByInsert() bool {
-	return C.trigger_fired_by_insert(td.tg_event) == C.true
+	return C.trigger_fired_by_insert(td.tgEvent) == C.true
 }
 
-//Returns true if the trigger was fired by an UPDATE command.
+//FiredByUpdate returns true if the trigger was fired by an UPDATE command.
 func (td *TriggerData) FiredByUpdate() bool {
-	return C.trigger_fired_by_update(td.tg_event) == C.true
+	return C.trigger_fired_by_update(td.tgEvent) == C.true
 }
 
-//Returns true if the trigger was fired by a DELETE command.
+//FiredByDelete returns true if the trigger was fired by a DELETE command.
 func (td *TriggerData) FiredByDelete() bool {
-	return C.trigger_fired_by_delete(td.tg_event) == C.true
+	return C.trigger_fired_by_delete(td.tgEvent) == C.true
 }
 
-//Returns true if the trigger was fired by a TRUNCATE command.
+//FiredByTruncate returns true if the trigger was fired by a TRUNCATE command.
 func (td *TriggerData) FiredByTruncate() bool {
-	return C.trigger_fired_by_truncate(td.tg_event) == C.true
+	return C.trigger_fired_by_truncate(td.tgEvent) == C.true
 }
 
 //TriggerRow is used in TriggerData as NewRow and OldRow
@@ -407,6 +412,7 @@ func newTriggerRow(tupleDesc C.TupleDesc, heapTuple C.HeapTuple) *TriggerRow {
 	return row
 }
 
+//Scan sets the args from the TriggerRow
 func (row *TriggerRow) Scan(args ...interface{}) error {
 	for i, arg := range args {
 		oid := C.SPI_gettypeid(row.tupleDesc, C.int(i+1))
@@ -419,7 +425,7 @@ func (row *TriggerRow) Scan(args ...interface{}) error {
 	return nil
 }
 
-//Sets the i'th value in the row
+//Set sets the i'th value in the row
 func (row *TriggerRow) Set(i int, val interface{}) {
 	row.attrs[i] = (C.Datum)(ToDatum(val))
 }
@@ -456,9 +462,8 @@ func ToDatum(val interface{}) Datum {
 	case bool:
 		if v {
 			return (Datum)(C.bool_to_datum(C.true))
-		} else {
-			return (Datum)(C.bool_to_datum(C.false))
 		}
+		return (Datum)(C.bool_to_datum(C.false))
 	case *TriggerRow:
 		isNull := make([]C.bool, len(v.attrs))
 		for i, attr := range v.attrs {
@@ -475,10 +480,10 @@ func ToDatum(val interface{}) Datum {
 	}
 }
 
-//Prepared SQL statement
+//Stmt represents the prepared SQL statement
 type Stmt struct {
-	spi_plan C.SPIPlanPtr
-	db       *DB
+	spiPlan C.SPIPlanPtr
+	db      *DB
 }
 
 //Prepare prepares an SQL query and returns a Stmt that can be executed
@@ -496,10 +501,9 @@ func (db *DB) Prepare(query string, types []string) (*Stmt, error) {
 	}
 	cplan := C.SPI_prepare(C.CString(query), C.int(len(types)), typeIdsP)
 	if cplan != nil {
-		return &Stmt{spi_plan: cplan, db: db}, nil
-	} else {
-		return nil, errors.New(fmt.Sprintf("Prepare failed: %s", C.GoString(C.SPI_result_code_string(C.SPI_result))))
+		return &Stmt{spiPlan: cplan, db: db}, nil
 	}
+	return nil, fmt.Errorf("Prepare failed: %s", C.GoString(C.SPI_result_code_string(C.SPI_result)))
 }
 
 //Query executes the prepared Stmt with the provided args and returns
@@ -508,29 +512,26 @@ func (stmt *Stmt) Query(args ...interface{}) (*Rows, error) {
 	valuesP, nullsP := spiArgs(args)
 	stmt.db.lock.Lock()
 	defer stmt.db.lock.Unlock()
-	rv := C.SPI_execute_plan(stmt.spi_plan, valuesP, nullsP, C.true, 0)
+	rv := C.SPI_execute_plan(stmt.spiPlan, valuesP, nullsP, C.true, 0)
 	if rv == C.SPI_OK_SELECT && C.SPI_processed > 0 {
 		return newRows(C.SPI_tuptable.vals, C.SPI_tuptable.tupdesc, C.SPI_processed), nil
-	} else {
-		return nil, errors.New(fmt.Sprintf("Query failed: %s", C.GoString(C.SPI_result_code_string(C.SPI_result))))
 	}
+	return nil, fmt.Errorf("Query failed: %s", C.GoString(C.SPI_result_code_string(C.SPI_result)))
 }
 
-//Query executes the prepared Stmt with the provided args and returns
-//multiple Rows result, that can be iterated
+//QueryRow executes the prepared Stmt with the provided args and returns one row result
 func (stmt *Stmt) QueryRow(args ...interface{}) (*Row, error) {
 	valuesP, nullsP := spiArgs(args)
 	stmt.db.lock.Lock()
 	defer stmt.db.lock.Unlock()
-	rv := C.SPI_execute_plan(stmt.spi_plan, valuesP, nullsP, C.false, 1)
+	rv := C.SPI_execute_plan(stmt.spiPlan, valuesP, nullsP, C.false, 1)
 	if rv >= C.int(0) && C.SPI_processed == 1 {
 		return &Row{
 			heapTuple: C.get_heap_tuple(C.SPI_tuptable.vals, C.uint(0)),
 			tupleDesc: C.SPI_tuptable.tupdesc,
 		}, nil
-	} else {
-		return nil, errors.New(fmt.Sprintf("QueryRow failed: %s", C.GoString(C.SPI_result_code_string(C.SPI_result))))
 	}
+	return nil, fmt.Errorf("QueryRow failed: %s", C.GoString(C.SPI_result_code_string(C.SPI_result)))
 }
 
 //Exec executes a prepared query Stmt with no result
@@ -538,12 +539,11 @@ func (stmt *Stmt) Exec(args ...interface{}) error {
 	valuesP, nullsP := spiArgs(args)
 	stmt.db.lock.Lock()
 	defer stmt.db.lock.Unlock()
-	rv := C.SPI_execute_plan(stmt.spi_plan, valuesP, nullsP, C.false, 0)
+	rv := C.SPI_execute_plan(stmt.spiPlan, valuesP, nullsP, C.false, 0)
 	if rv >= C.int(0) && C.SPI_processed == 1 {
 		return nil
-	} else {
-		return errors.New(fmt.Sprintf("Exec failed: %s", C.GoString(C.SPI_result_code_string(C.SPI_result))))
 	}
+	return fmt.Errorf("Exec failed: %s", C.GoString(C.SPI_result_code_string(C.SPI_result)))
 }
 
 func spiArgs(args []interface{}) (valuesP *C.Datum, nullsP *C.char) {
@@ -611,6 +611,7 @@ type Row struct {
 	heapTuple C.HeapTuple
 }
 
+//Scan scans the args from Row
 func (row *Row) Scan(args ...interface{}) error {
 	for i, arg := range args {
 		val := C.get_col_as_datum(row.heapTuple, row.tupleDesc, C.int(i))
@@ -633,42 +634,42 @@ func scanVal(oid C.Oid, typeName string, val C.Datum, arg interface{}) error {
 		case C.UNKNOWNOID:
 			*targ = C.GoString(C.unknown_to_char(val))
 		default:
-			return errors.New(fmt.Sprintf("Column type is not text %s", typeName))
+			return fmt.Errorf("Column type is not text %s", typeName)
 		}
 	case *int16:
 		switch oid {
 		case C.INT2OID:
 			*targ = int16(C.datum_to_int16(val))
 		default:
-			return errors.New(fmt.Sprintf("Column type is not int16 %s", typeName))
+			return fmt.Errorf("Column type is not int16 %s", typeName)
 		}
 	case *uint16:
 		switch oid {
 		case C.INT2OID:
 			*targ = uint16(C.datum_to_uint16(val))
 		default:
-			return errors.New(fmt.Sprintf("Column type is not uint16 %s", typeName))
+			return fmt.Errorf("Column type is not uint16 %s", typeName)
 		}
 	case *int32:
 		switch oid {
 		case C.INT4OID:
 			*targ = int32(C.datum_to_int32(val))
 		default:
-			return errors.New(fmt.Sprintf("Column type is not int32 %s", typeName))
+			return fmt.Errorf("Column type is not int32 %s", typeName)
 		}
 	case *uint32:
 		switch oid {
 		case C.INT4OID:
 			*targ = uint32(C.datum_to_uint32(val))
 		default:
-			return errors.New(fmt.Sprintf("Column type is not uint32 %s", typeName))
+			return fmt.Errorf("Column type is not uint32 %s", typeName)
 		}
 	case *int64:
 		switch oid {
 		case C.INT8OID:
 			*targ = int64(C.datum_to_int64(val))
 		default:
-			return errors.New(fmt.Sprintf("Column type is not int64 %s", typeName))
+			return fmt.Errorf("Column type is not int64 %s", typeName)
 		}
 	case *int:
 		switch oid {
@@ -679,7 +680,7 @@ func scanVal(oid C.Oid, typeName string, val C.Datum, arg interface{}) error {
 		case C.INT8OID:
 			*targ = int(C.datum_to_int64(val))
 		default:
-			return errors.New(fmt.Sprintf("Column type is not int %s", typeName))
+			return fmt.Errorf("Column type is not int %s", typeName)
 		}
 	case *uint:
 		switch oid {
@@ -690,28 +691,28 @@ func scanVal(oid C.Oid, typeName string, val C.Datum, arg interface{}) error {
 		case C.INT8OID:
 			*targ = uint(C.datum_to_int64(val))
 		default:
-			return errors.New(fmt.Sprintf("Column type is not uint %s", typeName))
+			return fmt.Errorf("Column type is not uint %s", typeName)
 		}
 	case *bool:
 		switch oid {
 		case C.BOOLOID:
 			*targ = C.datum_to_bool(val) == C.true
 		default:
-			return errors.New(fmt.Sprintf("Column type is not bool %s", typeName))
+			return fmt.Errorf("Column type is not bool %s", typeName)
 		}
 	case *float32:
 		switch oid {
 		case C.FLOAT4OID:
 			*targ = float32(C.datum_to_float4(val))
 		default:
-			return errors.New(fmt.Sprintf("Column type is not real %s", typeName))
+			return fmt.Errorf("Column type is not real %s", typeName)
 		}
 	case *float64:
 		switch oid {
 		case C.FLOAT8OID:
 			*targ = float64(C.datum_to_float8(val))
 		default:
-			return errors.New(fmt.Sprintf("Column type is not double precision %s", typeName))
+			return fmt.Errorf("Column type is not double precision %s", typeName)
 		}
 	case *time.Time:
 		switch oid {
@@ -725,10 +726,10 @@ func scanVal(oid C.Oid, typeName string, val C.Datum, arg interface{}) error {
 			t := C.datum_to_timetz(val)
 			*targ = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC).Add(time.Second * time.Duration(int64(t)/int64(C.USECS_PER_SEC))).Local()
 		default:
-			return errors.New(fmt.Sprintf("Unsupported time type %s", typeName))
+			return fmt.Errorf("Unsupported time type %s", typeName)
 		}
 	default:
-		return errors.New(fmt.Sprintf("Unsupported type in Scan (%s) %s", reflect.TypeOf(arg).String(), typeName))
+		return fmt.Errorf("Unsupported type in Scan (%s) %s", reflect.TypeOf(arg).String(), typeName)
 	}
 	return nil
 }
