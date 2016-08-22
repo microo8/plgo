@@ -1,6 +1,8 @@
 # plgo
 plgo is an "library" for easily creating PostgreSQL stored procedures and triggers in golang.
 
+contribution of all kind welcome!
+
 Creating new stored procedures with plgo is easy:
 
 1. Copy the `pl.go` to your new extension directory (optionally edit the CFLAGS path if it is different, use `pg_config --includedir-server`)
@@ -132,7 +134,7 @@ func plgo_trigger(fcinfo *FuncInfo) Datum {
 }
 ```
 
-also you must create the trigger function in PostgreSQL:
+you also must create the trigger function in PostgreSQL and set the trigger to an table event:
 
 ```sql
 CREATE OR REPLACE FUNCTION public.plgo_trigger()
@@ -140,12 +142,7 @@ CREATE OR REPLACE FUNCTION public.plgo_trigger()
 '$libdir/plgo_test', 'plgo_trigger'
   LANGUAGE c IMMUTABLE STRICT
   COST 1;
-```
-
-
-and set the trigger to an table event:
-
-```sql
+  
 CREATE TRIGGER my_awesome_trigger
   BEFORE UPDATE
   ON public.test
@@ -154,8 +151,9 @@ CREATE TRIGGER my_awesome_trigger
 ```
 
 
-#TODO
+##TODO
 
+- test test test!
 - range and array support
 - code generation tool?
 - Background Worker Processes!

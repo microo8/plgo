@@ -11,19 +11,20 @@ import (
 	"time"
 )
 
-//export plgo_test
-func plgo_test(fcinfo *FuncInfo) Datum {
+//PLGoTest testing function
+//export PLGoTest
+func PLGoTest(fcinfo *FuncInfo) Datum {
 	elog := &ELog{level: NOTICE}
 	t := log.New(elog, "", log.Lshortfile|log.Ltime)
 
-	TestConnection(t)
-	TestQueryOutputText(t)
-	TestQueryOutputInt(t)
-	TestQueryOutputTime(t)
-	TestQueryOutputBool(t)
-	TestQueryOutputFloat32(t)
-	TestQueryOutputFloat64(t)
-	TestQueryOutputArrayText(t)
+	testConnection(t)
+	testQueryOutputText(t)
+	testQueryOutputInt(t)
+	testQueryOutputTime(t)
+	testQueryOutputBool(t)
+	testQueryOutputFloat32(t)
+	testQueryOutputFloat64(t)
+	testQueryOutputArrayText(t)
 
 	db, _ := Open()
 	defer db.Close()
@@ -36,8 +37,9 @@ func plgo_test(fcinfo *FuncInfo) Datum {
 	return ToDatum(nil)
 }
 
-//export plgo_concat
-func plgo_concat(fcinfo *FuncInfo) Datum {
+//PLGoConcat concatenates two strings
+//export PLGoConcat
+func PLGoConcat(fcinfo *FuncInfo) Datum {
 	t := log.New(&ELog{level: NOTICE}, "", log.Lshortfile|log.Ltime)
 	var a string
 	var b string
@@ -50,8 +52,9 @@ func plgo_concat(fcinfo *FuncInfo) Datum {
 	return ToDatum(a + b)
 }
 
-//export plgo_trigger
-func plgo_trigger(fcinfo *FuncInfo) Datum {
+//PLGoTrigger is an trigger test function
+//export PLGoTrigger
+func PLGoTrigger(fcinfo *FuncInfo) Datum {
 	t := log.New(&ELog{level: NOTICE}, "", log.Lshortfile|log.Ltime)
 
 	if !fcinfo.CalledAsTrigger() {
@@ -70,7 +73,7 @@ func plgo_trigger(fcinfo *FuncInfo) Datum {
 	return ToDatum(triggerData.NewRow) //the new row will be changed
 }
 
-func TestConnection(t *log.Logger) {
+func testConnection(t *log.Logger) {
 	db, err := Open()
 	if err != nil {
 		t.Fatal(err)
@@ -89,7 +92,7 @@ func TestConnection(t *log.Logger) {
 	}
 }
 
-func TestQueryOutputText(t *log.Logger) {
+func testQueryOutputText(t *log.Logger) {
 	var tests = []struct {
 		query  string
 		args   []interface{}
@@ -110,7 +113,7 @@ func TestQueryOutputText(t *log.Logger) {
 	defer db.Close()
 
 	for _, test := range tests {
-		var args []string = nil
+		var args []string
 		if len(test.args) > 0 {
 			args = make([]string, len(test.args))
 			for i := range test.args {
@@ -142,7 +145,7 @@ func TestQueryOutputText(t *log.Logger) {
 	}
 }
 
-func TestQueryOutputInt(t *log.Logger) {
+func testQueryOutputInt(t *log.Logger) {
 	var tests = []struct {
 		query  string
 		args   []interface{}
@@ -165,7 +168,7 @@ func TestQueryOutputInt(t *log.Logger) {
 	defer db.Close()
 
 	for _, test := range tests {
-		var args []string = nil
+		var args []string
 		if len(test.args) > 0 {
 			args = make([]string, len(test.args))
 			for i := range test.args {
@@ -197,7 +200,7 @@ func TestQueryOutputInt(t *log.Logger) {
 	}
 }
 
-func TestQueryOutputTime(t *log.Logger) {
+func testQueryOutputTime(t *log.Logger) {
 	n := time.Now()
 	n = n.Add(time.Nanosecond * time.Duration(-n.Nanosecond()))
 	var tests = []struct {
@@ -217,7 +220,7 @@ func TestQueryOutputTime(t *log.Logger) {
 	defer db.Close()
 
 	for _, test := range tests {
-		var args []string = nil
+		var args []string
 		if len(test.args) > 0 {
 			args = make([]string, len(test.args))
 			for i := range test.args {
@@ -249,7 +252,7 @@ func TestQueryOutputTime(t *log.Logger) {
 	}
 }
 
-func TestQueryOutputBool(t *log.Logger) {
+func testQueryOutputBool(t *log.Logger) {
 	var tests = []struct {
 		query  string
 		args   []interface{}
@@ -269,7 +272,7 @@ func TestQueryOutputBool(t *log.Logger) {
 	defer db.Close()
 
 	for _, test := range tests {
-		var args []string = nil
+		var args []string
 		if len(test.args) > 0 {
 			args = make([]string, len(test.args))
 			for i := range test.args {
@@ -301,7 +304,7 @@ func TestQueryOutputBool(t *log.Logger) {
 	}
 }
 
-func TestQueryOutputFloat32(t *log.Logger) {
+func testQueryOutputFloat32(t *log.Logger) {
 	var tests = []struct {
 		query  string
 		args   []interface{}
@@ -321,7 +324,7 @@ func TestQueryOutputFloat32(t *log.Logger) {
 	defer db.Close()
 
 	for _, test := range tests {
-		var args []string = nil
+		var args []string
 		if len(test.args) > 0 {
 			args = make([]string, len(test.args))
 			for i := range test.args {
@@ -353,7 +356,7 @@ func TestQueryOutputFloat32(t *log.Logger) {
 	}
 }
 
-func TestQueryOutputFloat64(t *log.Logger) {
+func testQueryOutputFloat64(t *log.Logger) {
 	var tests = []struct {
 		query  string
 		args   []interface{}
@@ -373,7 +376,7 @@ func TestQueryOutputFloat64(t *log.Logger) {
 	defer db.Close()
 
 	for _, test := range tests {
-		var args []string = nil
+		var args []string
 		if len(test.args) > 0 {
 			args = make([]string, len(test.args))
 			for i := range test.args {
@@ -405,7 +408,7 @@ func TestQueryOutputFloat64(t *log.Logger) {
 	}
 }
 
-func TestQueryOutputArrayText(t *log.Logger) {
+func testQueryOutputArrayText(t *log.Logger) {
 	var tests = []struct {
 		query  string
 		args   []interface{}
