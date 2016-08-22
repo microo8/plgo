@@ -12,11 +12,13 @@ package main
 #include "utils/builtins.h"
 #include "utils/date.h"
 #include "utils/timestamp.h"
+#include "utils/array.h"
 #include "utils/elog.h"
 #include "executor/spi.h"
 #include "parser/parse_type.h"
 #include "commands/trigger.h"
 #include "utils/rel.h"
+#include "utils/lsyscache.h"
 
 #ifdef PG_MODULE_MAGIC
 PG_MODULE_MAGIC;
@@ -59,6 +61,7 @@ Datum get_heap_getattr(HeapTuple ht, uint i, TupleDesc td) {
 	if (isNull) PG_RETURN_VOID();
 	return ret;
 }
+
 
 //val to datum//////////////////////////////////////////////////
 Datum void_datum(){
@@ -117,6 +120,27 @@ Datum heap_tuple_to_datum(HeapTuple val) {
 	return PointerGetDatum(val);
 }
 
+Datum array_to_datum(Oid element_type, Datum* vals, int size) {
+	ArrayType *result;
+	bool isnull = true;
+    int ndims = 1;
+    int dims[MAXDIM];
+    int lbs[MAXDIM];
+    int16 typlen;
+    bool typbyval;
+    char typalign;
+
+	dims[0] = size;
+	lbs[0] = 1;
+
+    // get required info about the element type
+    get_typlenbyvalalign(element_type, &typlen, &typbyval, &typalign);
+	result = construct_md_array(vals, &isnull, ndims, dims, lbs,
+                                element_type, typlen, typbyval, typalign);
+
+    PG_RETURN_ARRAYTYPE_P(result);
+}
+
 //Datum to val //////////////////////////////////////////////////////////
 char* datum_to_cstring(Datum val) {
     return DatumGetCString(text_to_cstring((struct varlena *)val));
@@ -168,6 +192,23 @@ double datum_to_float8(Datum val) {
 
 HeapTuple datum_to_heap_tuple(Datum val) {
 	return (HeapTuple) DatumGetPointer(val);
+}
+
+Datum* datum_to_array(Datum val, int* nelemsp) {
+	ArrayType* array = DatumGetArrayTypeP(val);
+
+    int16 typlen;
+    bool typbyval;
+    char typalign;
+	Datum *result;
+	bool *nullsp;
+
+    get_typlenbyvalalign(ARR_ELEMTYPE(array), &typlen, &typbyval, &typalign);
+
+	deconstruct_array(array, ARR_ELEMTYPE(array),
+                      typlen, typbyval, typalign,
+                      &result, &nullsp, nelemsp);
+	return result;
 }
 
 char* unknown_to_char(Datum val) {
@@ -424,6 +465,23 @@ func (row *TriggerRow) Set(i int, val interface{}) {
 	row.attrs[i] = (C.Datum)(ToDatum(val))
 }
 
+func makeArray(elemtype C.Oid, arg interface{}) Datum {
+	s := reflect.ValueOf(arg)
+	if s.Kind() != reflect.Slice {
+		panic("InterfaceSlice() given a non-slice type")
+	}
+
+	vals := make([]interface{}, s.Len())
+	for i := 0; i < s.Len(); i++ {
+		vals[i] = s.Index(i).Interface()
+	}
+	datums := make([]C.Datum, len(vals))
+	for i, value := range vals {
+		datums[i] = (C.Datum)(ToDatum(value))
+	}
+	return (Datum)(C.array_to_datum(elemtype, &datums[0], C.int(len(vals))))
+}
+
 //ToDatum returns the Postgresql C type from Golang type
 func ToDatum(val interface{}) Datum {
 	switch v := val.(type) {
@@ -459,6 +517,30 @@ func ToDatum(val interface{}) Datum {
 		} else {
 			return (Datum)(C.bool_to_datum(C.false))
 		}
+	case []string:
+		return makeArray(C.TEXTOID, v)
+	case []int16:
+		return makeArray(C.INT2OID, v)
+	case []uint16:
+		return makeArray(C.INT2OID, v)
+	case []int32:
+		return makeArray(C.INT4OID, v)
+	case []uint32:
+		return makeArray(C.INT4OID, v)
+	case []int64:
+		return makeArray(C.INT8OID, v)
+	case []int:
+		return makeArray(C.INT8OID, v)
+	case []uint:
+		return makeArray(C.INT8OID, v)
+	case []float32:
+		return makeArray(C.FLOAT4OID, v)
+	case []float64:
+		return makeArray(C.FLOAT8OID, v)
+	case []bool:
+		return makeArray(C.BOOLOID, v)
+	case []time.Time:
+		return makeArray(C.TIMESTAMPTZOID, v)
 	case *TriggerRow:
 		isNull := make([]C.bool, len(v.attrs))
 		for i, attr := range v.attrs {
@@ -727,6 +809,23 @@ func scanVal(oid C.Oid, typeName string, val C.Datum, arg interface{}) error {
 		default:
 			return errors.New(fmt.Sprintf("Unsupported time type %s", typeName))
 		}
+	case *[]string:
+		elog := new(ELog)
+		elog.Print("Scan1")
+		var clength C.int
+		datumArray := C.datum_to_array(val, &clength)
+		elog.Print("Scan2")
+		length := int(clength)
+		slice := (*[1 << 30]C.Datum)(unsafe.Pointer(datumArray))[:length:length]
+		elog.Printf("Scan3 len=%d", length)
+		*targ = make([]string, length)
+		elog.Print("Scan4 ", slice)
+		for i := range slice {
+			elog.Print("Scan4 ", i, len(slice))
+			scanVal(C.TEXTOID, "Text", slice[i], &((*targ)[i]))
+			elog.Print("Scan4 ", i, len(slice))
+		}
+		elog.Print("Scan5")
 	default:
 		return errors.New(fmt.Sprintf("Unsupported type in Scan (%s) %s", reflect.TypeOf(arg).String(), typeName))
 	}
