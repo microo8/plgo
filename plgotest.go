@@ -416,7 +416,9 @@ func testQueryOutputArrayText(t *log.Logger) {
 	}{
 		{"select array['1','2']", nil, []string{"1", "2"}},
 		{"select string_to_array('meh#foo#bar','#')", nil, []string{"meh", "foo", "bar"}},
-		{"select array['foo'] || $1 || array['bar']", []interface{}{[]string{"meh"}}, []string{"foo", "meh", "bar"}},
+		{"select $1", []interface{}{[]string{"meh", "foo"}}, []string{"meh", "foo"}},
+		{"select array_append($1,'bar')", []interface{}{[]string{"meh", "foo"}}, []string{"meh", "foo", "bar"}},
+		{"select array_remove($1,'meh')", []interface{}{[]string{"meh", "foo"}}, []string{"foo"}},
 	}
 
 	db, err := Open()
@@ -426,7 +428,6 @@ func testQueryOutputArrayText(t *log.Logger) {
 	defer db.Close()
 
 	for _, test := range tests {
-		t.Print(1, test)
 		var args []string
 		if len(test.args) > 0 {
 			args = make([]string, len(test.args))
@@ -434,42 +435,31 @@ func testQueryOutputArrayText(t *log.Logger) {
 				args[i] = "text[]"
 			}
 		}
-		t.Print(2, test)
 		stmt, err := db.Prepare(test.query, args)
-		t.Print(3, test)
 		if err != nil {
 			t.Print("prepare", err)
 		}
 		if stmt == nil {
 			t.Print("plan is nil!")
 		}
-		t.Print(4, test)
 
 		rows, err := stmt.Query(test.args...)
-		t.Print(5, test)
 		if err != nil {
 			t.Print("Query ", err)
 		}
-		t.Print(6, test)
 		for rows.Next() {
-			t.Print(61, test)
 			var res []string
 			err = rows.Scan(&res)
-			t.Print(62, test)
 			if err != nil {
 				t.Print(test, err)
 			}
-			t.Print(63, test)
 			eq := len(res) == len(test.result)
 			for i := 0; eq && i < len(res); i++ {
 				eq = res[i] == test.result[i]
 			}
-			t.Print(64, test)
 			if !eq {
 				t.Print(test, "result not equal ", res, "!=", test.result)
 			}
-			t.Print(65, test)
 		}
-		t.Print("END", test.query)
 	}
 }

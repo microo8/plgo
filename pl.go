@@ -122,10 +122,9 @@ Datum heap_tuple_to_datum(HeapTuple val) {
 
 Datum array_to_datum(Oid element_type, Datum* vals, int size) {
 	ArrayType *result;
-	bool isnull = true;
-    int ndims = 1;
-    int dims[MAXDIM];
-    int lbs[MAXDIM];
+	bool* isnull = (bool *)palloc0(sizeof(bool)*size);
+    int dims[1];
+    int lbs[1];
     int16 typlen;
     bool typbyval;
     char typalign;
@@ -135,7 +134,7 @@ Datum array_to_datum(Oid element_type, Datum* vals, int size) {
 
     // get required info about the element type
     get_typlenbyvalalign(element_type, &typlen, &typbyval, &typalign);
-	result = construct_md_array(vals, &isnull, ndims, dims, lbs,
+	result = construct_md_array(vals, isnull, 1, dims, lbs,
                                 element_type, typlen, typbyval, typalign);
 
     PG_RETURN_ARRAYTYPE_P(result);
@@ -352,15 +351,10 @@ func (fcinfo *FuncInfo) CalledAsTrigger() bool {
 
 //Scan sets the args to the function parameter values (converted from PostgreSQL types to Go types)
 func (fcinfo *FuncInfo) Scan(args ...interface{}) error {
-	e := new(ELog)
 	for i, arg := range args {
-		e.Print(i, 0)
 		funcArg := C.get_arg(fcinfo, C.uint(i))
-		e.Print(i, 1)
 		argOid := C.get_call_expr_argtype(fcinfo.flinfo.fn_expr, C.int(i))
-		e.Print(i, 2)
 		err := scanVal(argOid, "", funcArg, arg)
-		e.Print(i, 3)
 		if err != nil {
 			return err
 		}
@@ -477,15 +471,11 @@ func makeArray(elemtype C.Oid, arg interface{}) Datum {
 		panic("InterfaceSlice() given a non-slice type")
 	}
 
-	vals := make([]interface{}, s.Len())
+	datums := make([]C.Datum, s.Len())
 	for i := 0; i < s.Len(); i++ {
-		vals[i] = s.Index(i).Interface()
+		datums[i] = (C.Datum)(ToDatum(s.Index(i).Interface()))
 	}
-	datums := make([]C.Datum, len(vals))
-	for i, value := range vals {
-		datums[i] = (C.Datum)(ToDatum(value))
-	}
-	return (Datum)(C.array_to_datum(elemtype, &datums[0], C.int(len(vals))))
+	return (Datum)(C.array_to_datum(elemtype, &datums[0], C.int(s.Len())))
 }
 
 //ToDatum returns the Postgresql C type from Golang type
@@ -811,22 +801,14 @@ func scanVal(oid C.Oid, typeName string, val C.Datum, arg interface{}) error {
 			return fmt.Errorf("Unsupported time type %s", typeName)
 		}
 	case *[]string:
-		elog := new(ELog)
-		elog.Print("Scan1")
 		var clength C.int
 		datumArray := C.datum_to_array(val, &clength)
-		elog.Print("Scan2")
 		length := int(clength)
-		slice := (*[1 << 30]C.Datum)(unsafe.Pointer(datumArray))[:length:length]
-		elog.Printf("Scan3 len=%d", length)
+		slice := (*[1 << 30]C.Datum)(unsafe.Pointer(datumArray))[:length]
 		*targ = make([]string, length)
-		elog.Print("Scan4 ", slice)
 		for i := range slice {
-			elog.Print("Scan4 ", i, len(slice))
 			scanVal(C.TEXTOID, "Text", slice[i], &((*targ)[i]))
-			elog.Print("Scan4 ", i, len(slice))
 		}
-		elog.Print("Scan5")
 	default:
 		return fmt.Errorf("Unsupported type in Scan (%s) %s", reflect.TypeOf(arg).String(), typeName)
 	}

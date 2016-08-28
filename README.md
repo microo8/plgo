@@ -142,7 +142,7 @@ CREATE OR REPLACE FUNCTION public.plgo_trigger()
 '$libdir/plgo_test', 'plgo_trigger'
   LANGUAGE c IMMUTABLE STRICT
   COST 1;
-  
+
 CREATE TRIGGER my_awesome_trigger
   BEFORE UPDATE
   ON public.test
@@ -154,6 +154,6 @@ CREATE TRIGGER my_awesome_trigger
 ##TODO
 
 - test test test!
-- range and array support
+- range support
 - code generation tool?
 - Background Worker Processes!
