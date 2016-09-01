@@ -96,7 +96,7 @@ Creating new stored procedures with plgo is easy:
 7. Happily run the function in your queries `select my_awesome_procedure('foo', 10)`
     output:
     ```
-                             plgo_example                         
+                         my_awesome_procedure                         
     --------------------------------------------------------------
      foomehfoomehfoomehfoomehfoomehfoomehfoomehfoomehfoomehfoomeh
     (1 row)
@@ -153,7 +153,8 @@ CREATE TRIGGER my_awesome_trigger
 
 ##TODO
 
+- goroutines test
+- range type support
 - test test test!
-- range support
 - code generation tool?
 - Background Worker Processes!

@@ -478,6 +478,14 @@ func makeArray(elemtype C.Oid, arg interface{}) Datum {
 	return (Datum)(C.array_to_datum(elemtype, &datums[0], C.int(s.Len())))
 }
 
+func makeSlice(val C.Datum) []C.Datum {
+	var clength C.int
+	datumArray := C.datum_to_array(val, &clength)
+	length := int(clength)
+	slice := (*[1 << 30]C.Datum)(unsafe.Pointer(datumArray))[:length]
+	return slice
+}
+
 //ToDatum returns the Postgresql C type from Golang type
 func ToDatum(val interface{}) Datum {
 	switch v := val.(type) {
@@ -801,13 +809,70 @@ func scanVal(oid C.Oid, typeName string, val C.Datum, arg interface{}) error {
 			return fmt.Errorf("Unsupported time type %s", typeName)
 		}
 	case *[]string:
-		var clength C.int
-		datumArray := C.datum_to_array(val, &clength)
-		length := int(clength)
-		slice := (*[1 << 30]C.Datum)(unsafe.Pointer(datumArray))[:length]
-		*targ = make([]string, length)
+		slice := makeSlice(val)
+		*targ = make([]string, len(slice))
 		for i := range slice {
 			scanVal(C.TEXTOID, "Text", slice[i], &((*targ)[i]))
+		}
+	case *[]int16:
+		slice := makeSlice(val)
+		*targ = make([]int16, len(slice))
+		for i := range slice {
+			scanVal(C.INT2OID, "SMALLINT", slice[i], &((*targ)[i]))
+		}
+	case *[]uint16:
+		slice := makeSlice(val)
+		*targ = make([]uint16, len(slice))
+		for i := range slice {
+			scanVal(C.INT2OID, "SMALLINT", slice[i], &((*targ)[i]))
+		}
+	case *[]int32:
+		slice := makeSlice(val)
+		*targ = make([]int32, len(slice))
+		for i := range slice {
+			scanVal(C.INT4OID, "INT", slice[i], &((*targ)[i]))
+		}
+	case *[]uint32:
+		slice := makeSlice(val)
+		*targ = make([]uint32, len(slice))
+		for i := range slice {
+			scanVal(C.INT4OID, "INT", slice[i], &((*targ)[i]))
+		}
+	case *[]int64:
+		slice := makeSlice(val)
+		*targ = make([]int64, len(slice))
+		for i := range slice {
+			scanVal(C.INT8OID, "INT", slice[i], &((*targ)[i]))
+		}
+	case *[]int:
+		slice := makeSlice(val)
+		*targ = make([]int, len(slice))
+		for i := range slice {
+			scanVal(C.INT8OID, "INT", slice[i], &((*targ)[i]))
+		}
+	case *[]bool:
+		slice := makeSlice(val)
+		*targ = make([]bool, len(slice))
+		for i := range slice {
+			scanVal(C.BOOLOID, "BOOL", slice[i], &((*targ)[i]))
+		}
+	case *[]float32:
+		slice := makeSlice(val)
+		*targ = make([]float32, len(slice))
+		for i := range slice {
+			scanVal(C.FLOAT4OID, "REAL", slice[i], &((*targ)[i]))
+		}
+	case *[]float64:
+		slice := makeSlice(val)
+		*targ = make([]float64, len(slice))
+		for i := range slice {
+			scanVal(C.FLOAT8OID, "DOUBLE", slice[i], &((*targ)[i]))
+		}
+	case *[]time.Time:
+		slice := makeSlice(val)
+		*targ = make([]time.Time, len(slice))
+		for i := range slice {
+			scanVal(C.TIMESTAMPTZOID, "TIMETZ", slice[i], &((*targ)[i]))
 		}
 	default:
 		return fmt.Errorf("Unsupported type in Scan (%s) %s", reflect.TypeOf(arg).String(), typeName)

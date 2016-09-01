@@ -8,6 +8,7 @@ import "C"
 import (
 	"log"
 	"math"
+	"sync"
 	"time"
 )
 
@@ -25,6 +26,9 @@ func PLGoTest(fcinfo *FuncInfo) Datum {
 	testQueryOutputFloat32(t)
 	testQueryOutputFloat64(t)
 	testQueryOutputArrayText(t)
+	testQueryOutputArrayInt(t)
+	testQueryOutputArrayFloat(t)
+	testGoroutines(t)
 
 	db, _ := Open()
 	defer db.Close()
@@ -460,6 +464,187 @@ func testQueryOutputArrayText(t *log.Logger) {
 			if !eq {
 				t.Print(test, "result not equal ", res, "!=", test.result)
 			}
+		}
+	}
+}
+
+func testQueryOutputArrayInt(t *log.Logger) {
+	var tests = []struct {
+		query  string
+		args   []interface{}
+		result []int
+	}{
+		{"select array[1,2]", nil, []int{1, 2}},
+		{"select $1", []interface{}{[]int{123, 456}}, []int{123, 456}},
+		{"select array_append($1,100)", []interface{}{[]int{1234, 5678}}, []int{1234, 5678, 100}},
+		{"select array_remove($1,100)", []interface{}{[]int{12345, 100, 67890}}, []int{12345, 67890}},
+	}
+
+	db, err := Open()
+	if err != nil {
+		t.Fatal("error opening", err)
+	}
+	defer db.Close()
+
+	for _, test := range tests {
+		var args []string
+		if len(test.args) > 0 {
+			args = make([]string, len(test.args))
+			for i := range test.args {
+				args[i] = "int[]"
+			}
+		}
+		stmt, err := db.Prepare(test.query, args)
+		if err != nil {
+			t.Print("prepare", err)
+		}
+		if stmt == nil {
+			t.Print("plan is nil!")
+		}
+
+		rows, err := stmt.Query(test.args...)
+		if err != nil {
+			t.Print("Query ", err)
+		}
+		for rows.Next() {
+			var res []int
+			err = rows.Scan(&res)
+			if err != nil {
+				t.Print(test, err)
+			}
+			eq := len(res) == len(test.result)
+			for i := 0; eq && i < len(res); i++ {
+				eq = res[i] == test.result[i]
+			}
+			if !eq {
+				t.Print(test, "result not equal ", res, "!=", test.result)
+			}
+		}
+	}
+}
+
+func testQueryOutputArrayFloat(t *log.Logger) {
+	var tests = []struct {
+		query  string
+		args   []interface{}
+		result []float64
+	}{
+		{"select array[1.2::double precision,2.3::double precision]", nil, []float64{1.2, 2.3}},
+		{"select $1", []interface{}{[]float64{123.2, 456.34}}, []float64{123.2, 456.34}},
+		{"select $1", []interface{}{[]float64{1e-23, 2.3e-45}}, []float64{1e-23, 2.3e-45}},
+		{"select array_append($1,100.001::double precision)", []interface{}{[]float64{1234.123123, 5678.456456}}, []float64{1234.123123, 5678.456456, 100.001}},
+		{"select array_remove($1,100.001::double precision)", []interface{}{[]float64{12345.123123, 100.001, 67890.456456}}, []float64{12345.123123, 67890.456456}},
+	}
+
+	db, err := Open()
+	if err != nil {
+		t.Fatal("error opening", err)
+	}
+	defer db.Close()
+
+	for _, test := range tests {
+		var args []string
+		if len(test.args) > 0 {
+			args = make([]string, len(test.args))
+			for i := range test.args {
+				args[i] = "double precision[]"
+			}
+		}
+		stmt, err := db.Prepare(test.query, args)
+		if err != nil {
+			t.Print("prepare", err)
+		}
+		if stmt == nil {
+			t.Print("plan is nil!")
+		}
+
+		rows, err := stmt.Query(test.args...)
+		if err != nil {
+			t.Print("Query ", err)
+		}
+		for rows.Next() {
+			var res []float64
+			err = rows.Scan(&res)
+			if err != nil {
+				t.Print(test, err)
+			}
+			eq := len(res) == len(test.result)
+			for i := 0; eq && i < len(res); i++ {
+				eq = res[i] == test.result[i]
+			}
+			if !eq {
+				t.Print(test, "result not equal ", res, "!=", test.result)
+			}
+		}
+	}
+}
+
+func testGoroutines(t *log.Logger) {
+	var tests = []struct {
+		query  string
+		args   []interface{}
+		result string
+	}{
+		{"select '1'::text", nil, "1"},
+		{"select 1::text", nil, "1"},
+		{"select 'meh'", nil, "meh"},
+		{"select '+ľščťžýáíé'::text", nil, "+ľščťžýáíé"},
+		{"select lower('MEH')", nil, "meh"},
+		{"select concat('foo', $1, 'bar')", []interface{}{"meh"}, "foomehbar"},
+	}
+
+	db, err := Open()
+	if err != nil {
+		t.Fatal("error opening", err)
+	}
+	defer db.Close()
+
+	var wg sync.WaitGroup
+
+	for i, test := range tests {
+		wg.Add(1)
+		go testGoroutine1(t, db, &wg, i, test)
+	}
+
+	wg.Wait()
+}
+
+func testGoroutine1(t *log.Logger, db *DB, wg *sync.WaitGroup, i int, test struct {
+	query  string
+	args   []interface{}
+	result string
+}) {
+	t.Println("goroutine", i)
+	defer wg.Done()
+	var args []string
+	if len(test.args) > 0 {
+		args = make([]string, len(test.args))
+		for i := range test.args {
+			args[i] = "text"
+		}
+	}
+	t.Println("Prepare1", test)
+	stmt, err := db.Prepare(test.query, args)
+	if err != nil {
+		t.Fatal("prepare", err)
+	}
+	if stmt == nil {
+		t.Fatal("plan is nil!")
+	}
+	t.Println("Prepare2", test)
+
+	rows, err := stmt.Query(test.args...)
+	if err != nil {
+		t.Fatal("Query ", err)
+	}
+	for rows.Next() {
+		var res string
+		err = rows.Scan(&res)
+		if err != nil {
+			t.Print(test, err)
+		}
+		if res != test.result {
+			t.Print(test, "result not equal ", res, "!=", test.result)
 		}
 	}
 }
