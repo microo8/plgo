@@ -579,6 +579,8 @@ func (db *DB) Prepare(query string, types []string) (*Stmt, error) {
 		}
 		typeIdsP = &typeIds[0]
 	}
+	db.lock.Lock()
+	defer db.lock.Unlock()
 	cplan := C.SPI_prepare(C.CString(query), C.int(len(types)), typeIdsP)
 	if cplan != nil {
 		return &Stmt{spiPlan: cplan, db: db}, nil

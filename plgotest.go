@@ -603,48 +603,44 @@ func testGoroutines(t *log.Logger) {
 
 	for i, test := range tests {
 		wg.Add(1)
-		go testGoroutine1(t, db, &wg, i, test)
+		i := i
+		test := test
+		go func() {
+			t.Println("goroutine", i)
+			defer wg.Done()
+			var args []string
+			if len(test.args) > 0 {
+				args = make([]string, len(test.args))
+				for i := range test.args {
+					args[i] = "text"
+				}
+			}
+			t.Println("Prepare1", test)
+			stmt, err := db.Prepare(test.query, args)
+			if err != nil {
+				t.Fatal("prepare", err)
+			}
+			if stmt == nil {
+				t.Fatal("plan is nil!")
+			}
+			t.Println("Prepare2", test)
+
+			rows, err := stmt.Query(test.args...)
+			if err != nil {
+				t.Fatal("Query ", err)
+			}
+			for rows.Next() {
+				var res string
+				err = rows.Scan(&res)
+				if err != nil {
+					t.Print(test, err)
+				}
+				if res != test.result {
+					t.Print(test, "result not equal ", res, "!=", test.result)
+				}
+			}
+		}()
 	}
 
 	wg.Wait()
-}
-
-func testGoroutine1(t *log.Logger, db *DB, wg *sync.WaitGroup, i int, test struct {
-	query  string
-	args   []interface{}
-	result string
-}) {
-	t.Println("goroutine", i)
-	defer wg.Done()
-	var args []string
-	if len(test.args) > 0 {
-		args = make([]string, len(test.args))
-		for i := range test.args {
-			args[i] = "text"
-		}
-	}
-	t.Println("Prepare1", test)
-	stmt, err := db.Prepare(test.query, args)
-	if err != nil {
-		t.Fatal("prepare", err)
-	}
-	if stmt == nil {
-		t.Fatal("plan is nil!")
-	}
-	t.Println("Prepare2", test)
-
-	rows, err := stmt.Query(test.args...)
-	if err != nil {
-		t.Fatal("Query ", err)
-	}
-	for rows.Next() {
-		var res string
-		err = rows.Scan(&res)
-		if err != nil {
-			t.Print(test, err)
-		}
-		if res != test.result {
-			t.Print(test, "result not equal ", res, "!=", test.result)
-		}
-	}
 }
