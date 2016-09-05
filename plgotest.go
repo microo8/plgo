@@ -602,29 +602,34 @@ func testGoroutines(t *log.Logger) {
 	var wg sync.WaitGroup
 
 	for i, test := range tests {
+
+		var args []string
+		if len(test.args) > 0 {
+			args = make([]string, len(test.args))
+			for i := range test.args {
+				args[i] = "text"
+			}
+		}
+		t.Println(i, "Prepare1", test)
+		stmt, err := db.Prepare(test.query, args)
+		t.Println(i, "Prepare2", test)
+		if err != nil {
+			t.Fatal("prepare", err)
+		}
+		t.Println(i, "Prepare3", test)
+		if stmt == nil {
+			t.Fatal("plan is nil!")
+		}
+		t.Println(i, "Prepare4", test)
+
 		wg.Add(1)
 		i := i
 		test := test
 		go func() {
 			t.Println("goroutine", i)
 			defer wg.Done()
-			var args []string
-			if len(test.args) > 0 {
-				args = make([]string, len(test.args))
-				for i := range test.args {
-					args[i] = "text"
-				}
-			}
-			t.Println("Prepare1", test)
-			stmt, err := db.Prepare(test.query, args)
-			if err != nil {
-				t.Fatal("prepare", err)
-			}
-			if stmt == nil {
-				t.Fatal("plan is nil!")
-			}
-			t.Println("Prepare2", test)
-
+			time.Sleep(time.Second)
+			t.Println("query", i)
 			rows, err := stmt.Query(test.args...)
 			if err != nil {
 				t.Fatal("Query ", err)
