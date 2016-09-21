@@ -1,4 +1,4 @@
-package main
+package plgo
 
 /*
 #cgo CFLAGS: -I/usr/include/postgresql/server

@@ -1,16 +1,10 @@
 package main
 
-/*
-#include "postgres.h"
-#include "fmgr.h"
-*/
-import "C"
-
 import "log"
+import "github.com/microo8/plgo/lib"
 
 func PLGoConcat(a, b string) string {
-	//meh
-	t := log.New(&ELog{level: NOTICE}, "", log.Lshortfile|log.Ltime)
+	t := log.New(&plgo.ELog{level: NOTICE}, "", log.Lshortfile|log.Ltime)
 	err := log.Scan(&a, &b)
 	t.Print("SCAAAAAN")
 	if err != nil {
