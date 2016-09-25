@@ -304,7 +304,7 @@ const (
 //ELog represents the elog io.Writter to use with Logger
 type ELog struct {
 	lock  sync.Mutex
-	level ELogLevel
+	Level ELogLevel
 }
 
 //Write is an notify implemented as io.Writter
@@ -316,7 +316,7 @@ func (e *ELog) Write(p []byte) (n int, err error) {
 func (e *ELog) _print(str string) {
 	e.lock.Lock()
 	defer e.lock.Unlock()
-	switch e.level {
+	switch e.Level {
 	case NOTICE:
 		C.elog_notice(C.CString(str))
 	case ERROR:
