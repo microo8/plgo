@@ -1,3 +1,5 @@
+[![Report card](http://goreportcard.com/badge/microo8/plgo)](http://goreportcard.com/report/microo8/plgo)
+
 # plgo
 plgo is an "library" for easily creating PostgreSQL stored procedures and triggers in golang.
 
