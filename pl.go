@@ -1,4 +1,4 @@
-package plgo
+package main
 
 /*
 #cgo CFLAGS: -I/usr/include/postgresql/server
@@ -650,7 +650,7 @@ type Rows struct {
 	current    C.HeapTuple
 }
 
-func newRows(heapTuples *C.HeapTuple, tupleDesc C.TupleDesc, processed C.uint32) *Rows {
+func newRows(heapTuples *C.HeapTuple, tupleDesc C.TupleDesc, processed C.uint64) *Rows {
 	rows := &Rows{
 		tupleDesc: tupleDesc,
 		processed: uint32(processed),
