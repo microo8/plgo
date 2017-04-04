@@ -1,4 +1,4 @@
-package main
+package plgo
 
 /*
 #cgo CFLAGS: -I/usr/include/postgresql/server
@@ -251,12 +251,13 @@ bool trigger_fired_by_truncate(TriggerEvent tg_event) {
 	return TRIGGER_FIRED_BY_TRUNCATE(tg_event);
 }
 
-#include "funcdec.h"
+//{funcdec}
 */
 import "C"
 import (
 	"errors"
 	"fmt"
+	"log"
 	"reflect"
 	"sync"
 	"time"
@@ -292,28 +293,28 @@ func (db *DB) Close() error {
 	return nil
 }
 
-//ELogLevel TODO
-type ELogLevel int
+//elogLevel Log level enum
+type elogLevel int
 
-//ELogLevel constants
+//elogLevel constants
 const (
-	NOTICE ELogLevel = iota
+	NOTICE elogLevel = iota
 	ERROR
 )
 
-//ELog represents the elog io.Writter to use with Logger
-type ELog struct {
+//elog represents the elog io.Writter to use with Logger
+type elog struct {
 	lock  sync.Mutex
-	Level ELogLevel
+	Level elogLevel
 }
 
 //Write is an notify implemented as io.Writter
-func (e *ELog) Write(p []byte) (n int, err error) {
+func (e *elog) Write(p []byte) (n int, err error) {
 	e._print(string(p))
 	return len(p), nil
 }
 
-func (e *ELog) _print(str string) {
+func (e *elog) _print(str string) {
 	e.lock.Lock()
 	defer e.lock.Unlock()
 	switch e.Level {
@@ -325,18 +326,28 @@ func (e *ELog) _print(str string) {
 }
 
 //Print writes the arguments to elog
-func (e *ELog) Print(args ...interface{}) {
+func (e *elog) Print(args ...interface{}) {
 	e._print(fmt.Sprint(args...))
 }
 
 //Printf writes formated arguments to elog
-func (e *ELog) Printf(format string, args ...interface{}) {
+func (e *elog) Printf(format string, args ...interface{}) {
 	e._print(fmt.Sprintf(format, args...))
 }
 
 //Println writes the arguments to elog as new line
-func (e *ELog) Println(args ...interface{}) {
+func (e *elog) Println(args ...interface{}) {
 	e._print(fmt.Sprintln(args...))
+}
+
+//NewNoticeLogger creates an logger that writes into NOTICE elog
+func NewNoticeLogger(prefix string, flag int) *log.Logger {
+	return log.New(&elog{Level: NOTICE}, prefix, flag)
+}
+
+//NewErrorLogger creates an logger that writes into ERROR elog
+func NewErrorLogger(prefix string, flag int) *log.Logger {
+	return log.New(&elog{Level: ERROR}, prefix, flag)
 }
 
 //FuncInfo is the type of parameters that all functions get
