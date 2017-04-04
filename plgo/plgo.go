@@ -161,7 +161,7 @@ func writeFiles(packagePath string, fset *token.FileSet, packageAst *ast.Package
 	for funcName := range functionNames {
 		funcdec += "PG_FUNCTION_INFO_V1(" + funcName + ");"
 	}
-	plgoSource = strings.Replace(plgoSource, "{funcdec}", funcdec, 1)
+	plgoSource = strings.Replace(plgoSource, "//{funcdec}", funcdec, 1)
 	err = ioutil.WriteFile(path.Join(packagePath, "pl.go"), []byte(plgoSource), 0644)
 	if err != nil {
 		return fmt.Errorf("Cannot write file tempdir: %s", err)
@@ -200,7 +200,7 @@ func copyFile(src, dst string) error {
 }
 
 func buildPackage(buildPath, packagePath string) error {
-	goBuild := exec.Command("go", "build", "-buildmode=c-shared",
+	goBuild := exec.Command("go", "build", "-v", "-buildmode=c-shared",
 		"-o", path.Join(buildPath, path.Base(packagePath)+".so"),
 		path.Join(buildPath, "package.go"),
 		path.Join(buildPath, "methods.go"),
