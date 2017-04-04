@@ -283,7 +283,20 @@ func main() {
 			return
 		}
 	case "install":
-		panic("waaaa")
+		pglibdir, err := exec.Command("pg_config", "--pkglibdir").CombinedOutput()
+		if err != nil {
+			fmt.Println("Cannot get postgresql libdir:", err)
+			return
+		}
+		err = copyFile(
+			path.Join(tempPackagePath, path.Base(packagePath)+".so"),
+			path.Join(string(pglibdir), path.Base(packagePath)+".so"),
+		)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		//TODO create sql and run it in db
 	}
 
 }
