@@ -7,6 +7,8 @@ import (
 	"go/format"
 	"go/parser"
 	"go/token"
+	"html/template"
+	"io"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -14,7 +16,36 @@ import (
 	"strings"
 )
 
-var functionNames = make(map[string]*ast.FieldList)
+const methods = `package main
+
+/*
+#include "postgres.h"
+#include "fmgr.h"
+*/
+import "C"
+
+{{range $funcName, $funcParams := .}}
+//export {{$funcName}}
+func {{$funcName}}(fcinfo *FuncInfo) Datum {
+	{{range $funcParams}}var {{.Name}} {{.Type}}
+	{{end}}
+	fcinfo.Scan(
+		{{range $funcParams}}&{{.Name}},
+		{{end}})
+	ret := {{$funcName | ToLower }}(
+		{{range $funcParams}}{{.Name}},
+		{{end}})
+	return ToDatum(ret)
+}
+{{end}}
+`
+
+//Param represents the parameters of the functions
+type Param struct {
+	Name, Type string
+}
+
+var functionNames = make(map[string][]Param)
 
 //FuncVisitor is an function that can be used like Visitor interface for ast.Walk
 type FuncVisitor struct{}
@@ -27,7 +58,15 @@ func (v *FuncVisitor) Visit(node ast.Node) ast.Visitor {
 		return v
 	}
 
-	functionNames[function.Name.Name] = function.Type.Params
+	for _, param := range function.Type.Params.List {
+		paramType, ok := param.Type.(*ast.Ident)
+		if !ok {
+			panic("not ok param type") //TODO
+		}
+		for _, name := range param.Names {
+			functionNames[function.Name.Name] = append(functionNames[function.Name.Name], Param{Name: name.Name, Type: paramType.Name})
+		}
+	}
 	function.Name.Name = strings.ToLower(function.Name.Name[0:1]) + function.Name.Name[1:]
 
 	//TODO test param type, so that the type is supported string, int, float64 etc.
@@ -102,8 +141,11 @@ func writeFiles(packagePath string, fset *token.FileSet, packageAst *ast.Package
 	if err != nil {
 		return fmt.Errorf("Cannot write file tempdir: %s", err)
 	}
+	//write and modify plgo package
 	plgoPath := path.Join(os.Getenv("GOPATH"), "src", "github.com", "microo8", "plgo", "pl.go")
-	//TODO check plgo exists + how to go get the plgo lib
+	if _, err := os.Stat(plgoPath); os.IsNotExist(err) {
+		return fmt.Errorf("Package github.com/microo8/plgo not installed\nplease install it with: go get -u github.com/microo8/plgo/... ")
+	}
 	plgoSourceBin, err := ioutil.ReadFile(plgoPath)
 	if err != nil {
 		return fmt.Errorf("Cannot read plgo package: %s", err)
@@ -124,45 +166,97 @@ func writeFiles(packagePath string, fset *token.FileSet, packageAst *ast.Package
 	if err != nil {
 		return fmt.Errorf("Cannot write file tempdir: %s", err)
 	}
+	//create the exported methods file
+	methodsFile, err := os.Create(path.Join(packagePath, "methods.go"))
+	if err != nil {
+		return fmt.Errorf("Cannot write file tempdir: %s", err)
+	}
+	funcMap := template.FuncMap{
+		"ToLower": func(str string) string { return strings.ToLower(str[0:1]) + str[1:] },
+	}
+	t := template.Must(template.New("").Funcs(funcMap).Parse(methods))
+	err = t.Execute(methodsFile, functionNames)
+	if err != nil {
+		return fmt.Errorf("Cannot write file tempdir: %s", err)
+	}
 	return nil
+}
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(out, in)
+	if err != nil {
+		return err
+	}
+	return out.Close()
 }
 
 func buildPackage(buildPath, packagePath string) error {
 	goBuild := exec.Command("go", "build", "-buildmode=c-shared",
 		"-o", path.Join(buildPath, path.Base(packagePath)+".so"),
 		path.Join(buildPath, "package.go"),
+		path.Join(buildPath, "methods.go"),
 		path.Join(buildPath, "pl.go"),
 	)
-	err := goBuild.Start()
+
+	stderr, err := goBuild.StderrPipe()
+	if err != nil {
+		panic(err)
+	}
+	stdout, err := goBuild.StdoutPipe()
+	if err != nil {
+		panic(err)
+	}
+
+	err = goBuild.Start()
 	if err != nil {
 		return fmt.Errorf("Cannot build package: %s", err)
 	}
+	io.Copy(os.Stderr, stderr)
+	io.Copy(os.Stdout, stdout)
+	err = goBuild.Wait()
+	if err != nil {
+		return fmt.Errorf("Cannot build package: %s", err)
+	}
+
 	return nil
+}
+
+func printUsage() {
+	fmt.Println(`Usage:
+plgo build [path/to/package]
+or
+plgo install [path/to/package]`)
 }
 
 func main() {
 	flag.Parse()
-	if len(flag.Args()) == 0 || len(flag.Args()) > 2 || flag.Arg(0) != "build" {
-		fmt.Println(`Usage:\nplgo build [path/to/package]`)
+	if len(flag.Args()) == 0 || len(flag.Args()) > 2 || (flag.Arg(0) != "build" && flag.Arg(0) != "install") {
+		printUsage()
 		return
 	}
-
 	//set package path
 	packagePath := "."
 	if len(flag.Args()) == 2 {
 		packagePath = flag.Arg(1)
 	}
-
 	fset, packageAst, err := parsePackage(packagePath)
 	if err != nil {
 		fmt.Println(err)
+		printUsage()
 		return
 	}
-
 	ast.Walk(new(FuncVisitor), packageAst)
 	ast.Walk(new(ImportVisitor), packageAst)
 	ast.Walk(new(PLGOVisitor), packageAst)
-
 	tempPackagePath, err := ioutil.TempDir("", "plgo")
 	if err != nil {
 		fmt.Println("Cannot get tempdir:", err)
@@ -173,10 +267,23 @@ func main() {
 		fmt.Println(err)
 		return
 	}
-
 	err = buildPackage(tempPackagePath, packagePath)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
+	switch flag.Arg(0) {
+	case "build":
+		err = copyFile(
+			path.Join(tempPackagePath, path.Base(packagePath)+".so"),
+			path.Join(".", path.Base(packagePath)+".so"),
+		)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+	case "install":
+		panic("waaaa")
+	}
+
 }
