@@ -37,49 +37,49 @@ Creating new stored procedures with plgo is easy:
 
     //export my_awesome_procedure
     func my_awesome_procedure(fcinfo *FuncInfo) Datum {
-	    //getting the function parameters
-        var t string
-        var x int
-        fcinfo.Scan(&t, &x)
+	//getting the function parameters
+	var t string
+	var x int
+	fcinfo.Scan(&t, &x)
 
-	    //Creating notice logger
-	    logger := log.New(&elog{}, "", log.Ltime|log.Lshortfile)
+	//Creating notice logger
+	logger := log.New(&elog{}, "", log.Ltime|log.Lshortfile)
 
-    	//connect to DB
-    	db, err := Open()
-    	if err != nil {
-    		logger.Fatal(err)
-    	}
-    	defer db.Close()
+	//connect to DB
+	db, err := Open()
+	if err != nil {
+		logger.Fatal(err)
+	}
+	defer db.Close()
 
-	    //preparing query statement
-	    stmt, err := db.Prepare("select * from test where id=$1", []string{"integer"})
-	    if err != nil {
-    		logger.Fatal(err)
-	    }
+	//preparing query statement
+	stmt, err := db.Prepare("select * from test where id=$1", []string{"integer"})
+	if err != nil {
+		logger.Fatal(err)
+	}
 
-	    //running statement
-	    row, err := stmt.QueryRow(1)
-	    if err != nil {
-    		logger.Fatal(err)
-	    }
+	//running statement
+	row, err := stmt.QueryRow(1)
+	if err != nil {
+		logger.Fatal(err)
+	}
 
-	    //scanning result row
-	    var id int
-	    var txt string
-	    err = row.Scan(&id, &txt)
-	    if err != nil {
-    		logger.Fatal(err)
-	    }
+	//scanning result row
+	var id int
+	var txt string
+	err = row.Scan(&id, &txt)
+	if err != nil {
+		logger.Fatal(err)
+	}
 
-	    //some magic with return value :)
-	    var ret string
-	    for i := 0; i < x; i++ {
-		    ret += t + txt
-	    }
+	//some magic with return value :)
+	var ret string
+	for i := 0; i < x; i++ {
+	    ret += t + txt
+	}
 
-        //return type must be converted to Datum
-	    return ToDatum(ret)
+	//return type must be converted to Datum
+	return ToDatum(ret)
     }
     ```
 
@@ -104,30 +104,31 @@ Creating new stored procedures with plgo is easy:
     (1 row)
     ```
 
-##Triggers
+
+## Triggers
 
 Triggers are also easy:
 
 ```go
 //export plgo_trigger
 func plgo_trigger(fcinfo *FuncInfo) Datum {
-    //logger
+	//logger
 	t := log.New(&ELog{level: NOTICE}, "", log.Lshortfile|log.Ltime)
 
-    //this must be true, else the function is not called as a trigger
+	//this must be true, else the function is not called as a trigger
 	if !fcinfo.CalledAsTrigger() {
 		t.Fatal("Not called as trigger")
 	}
 
-    //use TriggerData to manipulate the Old and New row
+	//use TriggerData to manipulate the Old and New row
 	triggerData := fcinfo.TriggerData()
 
-    //test if the trigger is called before update event
+	//test if the trigger is called before update event
 	if !triggerData.FiredBefore() && !triggerData.FiredByUpdate(){
 		t.Fatal("function not called BEFORE UPDATE :-O")
 	}
 
-    //setting an timestamp collumn to the yesterdays time (it's just an example)
+	//setting an timestamp collumn to the yesterdays time (it's just an example)
 	triggerData.NewRow.Set(4, time.Now().Add(-time.Hour*time.Duration(24)))
 
 	//return ToDatum(nil) //nothing changed in the row
@@ -140,10 +141,9 @@ you also must create the trigger function in PostgreSQL and set the trigger to a
 
 ```sql
 CREATE OR REPLACE FUNCTION public.plgo_trigger()
-  RETURNS trigger AS
+RETURNS trigger AS
 '$libdir/plgo_test', 'plgo_trigger'
-  LANGUAGE c IMMUTABLE STRICT
-  COST 1;
+LANGUAGE c IMMUTABLE STRICT COST 1;
 
 CREATE TRIGGER my_awesome_trigger
   BEFORE UPDATE
@@ -152,11 +152,20 @@ CREATE TRIGGER my_awesome_trigger
   EXECUTE PROCEDURE public.plgo_trigger();
 ```
 
+### use of goroutines
 
-##TODO
+Using goroutines is possible, but very tricky. The allocation of the stack for the goroutine is bigger than [max_stack_depth](https://www.postgresql.org/docs/current/static/runtime-config-resource.html). Running an procedure that spins-up some goroutines ends with crashing:
 
-- goroutines test
+```
+ERROR:  stack depth limit exceeded
+HINT:  Increase the configuration parameter "max_stack_depth" (currently 7680kB), after ensuring the platform's stack depth limit is adequate.
+```
+
+Setting it to the kernel maximum (`ulimit -s`) doesn't help.
+But the size of allocated stack is checked by the DB only when calling some statement. So you can probably play with that. You get all the data from the DB at the beginning of your procedure and then spin-up some goroutines, after that don't touch the DB. But I don't recommend doing it.
+
+## todo
+
 - range type support
-- test test test!
-- code generation tool?
+- code generation tool (generating the boiler plate + installing functions to the db with `psql` ...)
 - Background Worker Processes!
