@@ -344,7 +344,7 @@ type FuncInfo C.FunctionCallInfoData
 
 //CalledAsTrigger checks if the function is called as trigger
 func (fcinfo *FuncInfo) CalledAsTrigger() bool {
-	return C.called_as_trigger(fcinfo) == C.true
+	return C.called_as_trigger((*C.struct_FunctionCallInfoData)(unsafe.Pointer(fcinfo))) == C.true
 }
 
 //TODO Scan must return argument also if the function is called as trigger
@@ -352,7 +352,7 @@ func (fcinfo *FuncInfo) CalledAsTrigger() bool {
 //Scan sets the args to the function parameter values (converted from PostgreSQL types to Go types)
 func (fcinfo *FuncInfo) Scan(args ...interface{}) error {
 	for i, arg := range args {
-		funcArg := C.get_arg(fcinfo, C.uint(i))
+		funcArg := C.get_arg((*C.struct_FunctionCallInfoData)(unsafe.Pointer(fcinfo)), C.uint(i))
 		argOid := C.get_call_expr_argtype(fcinfo.flinfo.fn_expr, C.int(i))
 		err := scanVal(argOid, "", funcArg, arg)
 		if err != nil {

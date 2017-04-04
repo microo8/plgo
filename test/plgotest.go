@@ -1,6 +1,9 @@
 package main
 
 /*
+#cgo CFLAGS: -I/usr/include/postgresql/server
+#cgo LDFLAGS: -shared
+
 #include "postgres.h"
 #include "fmgr.h"
 */
@@ -15,7 +18,7 @@ import (
 //PLGoTest testing function
 //export PLGoTest
 func PLGoTest(fcinfo *FuncInfo) Datum {
-	elog := &ELog{level: NOTICE}
+	elog := &ELog{Level: NOTICE}
 	t := log.New(elog, "", log.Lshortfile|log.Ltime)
 
 	testConnection(t)
@@ -36,7 +39,7 @@ func PLGoTest(fcinfo *FuncInfo) Datum {
 	update, _ := db.Prepare("update test set txt='abc'", []string{})
 	update.Exec()
 
-	elog.level = NOTICE
+	elog.Level = NOTICE
 	t.Println("TEST end")
 	return ToDatum(nil)
 }
@@ -44,7 +47,7 @@ func PLGoTest(fcinfo *FuncInfo) Datum {
 //PLGoConcat concatenates two strings
 //export PLGoConcat
 func PLGoConcat(fcinfo *FuncInfo) Datum {
-	t := log.New(&ELog{level: NOTICE}, "", log.Lshortfile|log.Ltime)
+	t := log.New(&ELog{Level: NOTICE}, "", log.Lshortfile|log.Ltime)
 	var a string
 	var b string
 	t.Print("SCAAAAAN")
@@ -59,7 +62,7 @@ func PLGoConcat(fcinfo *FuncInfo) Datum {
 //PLGoTrigger is an trigger test function
 //export PLGoTrigger
 func PLGoTrigger(fcinfo *FuncInfo) Datum {
-	t := log.New(&ELog{level: NOTICE}, "", log.Lshortfile|log.Ltime)
+	t := log.New(&ELog{Level: NOTICE}, "", log.Lshortfile|log.Ltime)
 
 	if !fcinfo.CalledAsTrigger() {
 		t.Fatal("Not called as trigger")
