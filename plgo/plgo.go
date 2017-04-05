@@ -1,43 +1,56 @@
 package main
 
 import (
-	"bytes"
 	"flag"
 	"fmt"
 	"go/ast"
 	"go/format"
 	"go/parser"
 	"go/token"
-	"go/types"
+	"html/template"
 	"io"
 	"io/ioutil"
 	"os"
 	"os/exec"
 	"path"
+	"strings"
 )
 
-//ReturnVisitor is an function that can be used like Visitor interface for ast.Walk
-type ReturnVisitor struct{}
+const methods = `package main
 
-//Visit just calls inself
-func (v *ReturnVisitor) Visit(node ast.Node) ast.Visitor {
-	ret, ok := node.(*ast.ReturnStmt)
-	if !ok {
-		return v
-	}
-	ret.Results = []ast.Expr{
-		&ast.CallExpr{
-			Fun:  ast.NewIdent("ToDatum"),
-			Args: ret.Results,
-		},
-	}
-	return v
+/*
+#include "postgres.h"
+#include "fmgr.h"
+*/
+import "C"
+
+{{range $funcName, $funcParams := .}}
+//export {{$funcName}}
+func {{$funcName}}(fcinfo *FuncInfo) Datum {
+	{{range $funcParams}}var {{.Name}} {{.Type}}
+	{{end}}
+	fcinfo.Scan(
+		{{range $funcParams}}&{{.Name}},
+		{{end}})
+	ret := {{$funcName | ToLower }}(
+		{{range $funcParams}}{{.Name}},
+		{{end}})
+	return ToDatum(ret)
 }
+{{end}}
+`
+
+//Param represents the parameters of the functions
+type Param struct {
+	Name, Type string
+}
+
+var functionNames = make(map[string][]Param)
 
 //FuncVisitor is an function that can be used like Visitor interface for ast.Walk
 type FuncVisitor struct{}
 
-//Visit just calls inself
+//Visit just calls itself
 func (v *FuncVisitor) Visit(node ast.Node) ast.Visitor {
 	//is exported function
 	function, ok := node.(*ast.FuncDecl)
@@ -45,170 +58,155 @@ func (v *FuncVisitor) Visit(node ast.Node) ast.Visitor {
 		return v
 	}
 
-	params := function.Type.Params
-	//TODO test param types, so that the type is supported string, int, float64 etc.
-
-	//function params are just fcinfo *FuncInfo and return value is Datum
-	function.Type.Params = &ast.FieldList{
-		List: []*ast.Field{
-			&ast.Field{
-				Names: []*ast.Ident{ast.NewIdent("functionCallInfoData")},
-				Type:  ast.NewIdent("*C.FunctionCallInfoData"),
-			},
-		},
-	}
-
-	function.Type.Results = &ast.FieldList{
-		List: []*ast.Field{
-			&ast.Field{
-				Type: ast.NewIdent("C.Datum"),
-			},
-		},
-	}
-
-	cast := []ast.Stmt{
-		&ast.AssignStmt{
-			Lhs: []ast.Expr{ast.NewIdent("fcinfo")},
-			Tok: token.DEFINE,
-			Rhs: []ast.Expr{
-				&ast.CallExpr{
-					Fun: &ast.ParenExpr{
-						X: &ast.SelectorExpr{
-							X:   ast.NewIdent("plgo"),
-							Sel: ast.NewIdent("FuncInfo"),
-						},
-					},
-					Args: []ast.Expr{
-						&ast.CallExpr{
-							Fun: &ast.SelectorExpr{
-								X:   ast.NewIdent("unsafe"),
-								Sel: ast.NewIdent("Pointer"),
-							},
-							Args: []ast.Expr{ast.NewIdent("functionCallInfoData")},
-						},
-					},
-				},
-			},
-		},
-	}
-
-	//declarations of parameter variables
-	paramDecs := []ast.Stmt{}
-	//fcinfo.Scan args
-	scanArgs := []ast.Expr{}
-	for _, param := range params.List {
+	for _, param := range function.Type.Params.List {
+		paramType, ok := param.Type.(*ast.Ident)
+		if !ok {
+			panic("not ok param type") //TODO
+		}
 		for _, name := range param.Names {
-			paramDecs = append(paramDecs, &ast.DeclStmt{
-				Decl: &ast.GenDecl{
-					Tok: token.VAR,
-					Specs: []ast.Spec{
-						&ast.ValueSpec{
-							Names: []*ast.Ident{ast.NewIdent(name.Name)},
-							Type:  ast.NewIdent(types.ExprString(param.Type)),
-						},
-					},
-				},
-			})
-			scanArgs = append(scanArgs, &ast.UnaryExpr{
-				Op: token.AND,
-				X:  ast.NewIdent(name.Name),
-			})
+			functionNames[function.Name.Name] = append(functionNames[function.Name.Name], Param{Name: name.Name, Type: paramType.Name})
 		}
 	}
+	function.Name.Name = strings.ToLower(function.Name.Name[0:1]) + function.Name.Name[1:]
 
-	function.Body.List = append([]ast.Stmt{
-		//err := fcinfo.Scan
-		&ast.AssignStmt{
-			Lhs: []ast.Expr{ast.NewIdent("err")},
-			Tok: token.DEFINE,
-			Rhs: []ast.Expr{
-				&ast.CallExpr{
-					Fun: &ast.SelectorExpr{
-						X:   ast.NewIdent("fcinfo"),
-						Sel: ast.NewIdent("Scan"),
-					},
-					Args: scanArgs,
-				},
-			},
-		},
-		//if err != nil panic
-		&ast.IfStmt{
-			Cond: &ast.BinaryExpr{
-				X:  ast.NewIdent("err"),
-				Op: token.NEQ,
-				Y:  ast.NewIdent("nil"),
-			},
-			Body: &ast.BlockStmt{
-				List: []ast.Stmt{
-					&ast.ExprStmt{
-						X: &ast.CallExpr{
-							Fun:  ast.NewIdent("panic"),
-							Args: []ast.Expr{ast.NewIdent("err")},
-						},
-					},
-				},
-			},
-		},
-	}, function.Body.List...)
-
-	//prepend all parameter variables
-	function.Body.List = append(paramDecs, function.Body.List...)
-	function.Body.List = append(cast, function.Body.List...)
+	//TODO test param type, so that the type is supported string, int, float64 etc.
+	//params := function.Type.Params
+	//for i, param := range params.List {
+	//TODO test
+	//}
 
 	return v
 }
 
-func main() {
-	flag.Parse()
-	if len(flag.Args()) == 0 || len(flag.Args()) > 2 || flag.Arg(0) != "build" {
-		fmt.Println(`Usage:\nplgo build [path/to/package]`)
-		return
-	}
+//ImportVisitor is an function that can be used like Visitor interface for ast.Walk
+type ImportVisitor struct{}
 
-	dir := "."
-	if len(flag.Args()) == 2 {
-		dir = flag.Arg(1)
+//Visit removes plgo imports
+func (v *ImportVisitor) Visit(node ast.Node) ast.Visitor {
+	imp, ok := node.(*ast.ImportSpec)
+	if !ok || imp.Path.Value != "\"github.com/microo8/plgo\"" {
+		return v
 	}
+	imp.Path.Value = ""
+	return v
+}
 
+//PLGOVisitor is an function that can be used like Visitor interface for ast.Walk
+type PLGOVisitor struct{}
+
+//Visit removes plgo imports
+func (v *PLGOVisitor) Visit(node ast.Node) ast.Visitor {
+	call, ok := node.(*ast.CallExpr)
+	if !ok {
+		return v
+	}
+	selector, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return v
+	}
+	expr, ok := selector.X.(*ast.Ident)
+	if !ok || expr.Name != "plgo" {
+		return v
+	}
+	call.Fun = selector.Sel
+	return v
+}
+
+func parsePackage(packagePath string) (*token.FileSet, *ast.Package, error) {
 	fset := token.NewFileSet()
-	f, err := parser.ParseDir(fset, dir, nil, parser.ParseComments)
+	f, err := parser.ParseDir(fset, packagePath, nil, parser.ParseComments)
 	if err != nil {
-		panic(err)
+		return nil, nil, fmt.Errorf("Cannot parse package: %s", err)
 	}
 	if len(f) > 1 {
-		fmt.Println("More than one package in", dir)
-		return
+		return nil, nil, fmt.Errorf("More than one package in %s", packagePath)
 	}
-
 	packageAst, ok := f["main"]
 	if !ok {
-		fmt.Println("No package main in", dir)
-		return
+		return nil, nil, fmt.Errorf("No package main in %s", packagePath)
 	}
+	return fset, packageAst, nil
+}
 
-	ast.Walk(new(FuncVisitor), packageAst)
-	ast.Walk(new(ReturnVisitor), packageAst)
-	//ast.Print(fset, packageAst)
-
-	buf := bytes.NewBuffer(nil)
-	if err = format.Node(buf, fset, ast.MergePackageFiles(packageAst, ast.FilterFuncDuplicates)); err != nil {
-		panic(err)
-	}
-	src := buf.String()
-	src = src[:14] + "/*\n#include \"postgres.h\"\n#include \"fmgr.h\"\n*/\nimport \"C\"\n" + src[14:]
-	print(src)
-
-	//save to files
-	tmp, err := ioutil.TempDir("", "build")
+func writeFiles(packagePath string, fset *token.FileSet, packageAst *ast.Package) error {
+	//write users package
+	packageFile, err := os.Create(path.Join(packagePath, "package.go"))
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("Cannot write file tempdir: %s", err)
 	}
-	defer os.RemoveAll(tmp)
-	ioutil.WriteFile(path.Join(tmp, "tmp.go"), []byte(src), os.ModePerm)
-	//TODO write pl.go as main package
+	if err = format.Node(packageFile, fset, ast.MergePackageFiles(packageAst, ast.FilterFuncDuplicates)); err != nil {
+		return fmt.Errorf("Cannot format package %s", err)
+	}
+	err = packageFile.Close()
+	if err != nil {
+		return fmt.Errorf("Cannot write file tempdir: %s", err)
+	}
+	//write and modify plgo package
+	plgoPath := path.Join(os.Getenv("GOPATH"), "src", "github.com", "microo8", "plgo", "pl.go")
+	if _, err := os.Stat(plgoPath); os.IsNotExist(err) {
+		return fmt.Errorf("Package github.com/microo8/plgo not installed\nplease install it with: go get -u github.com/microo8/plgo/... ")
+	}
+	plgoSourceBin, err := ioutil.ReadFile(plgoPath)
+	if err != nil {
+		return fmt.Errorf("Cannot read plgo package: %s", err)
+	}
+	plgoSource := string(plgoSourceBin)
+	plgoSource = "package main\n\n" + plgoSource[12:]
+	postgresIncludeDir, err := exec.Command("pg_config", "--includedir-server").CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("Cannot run pg_config: %s", err)
+	}
+	plgoSource = strings.Replace(plgoSource, "/usr/include/postgresql/server", string(postgresIncludeDir), 1)
+	var funcdec string
+	for funcName := range functionNames {
+		funcdec += "PG_FUNCTION_INFO_V1(" + funcName + ");"
+	}
+	plgoSource = strings.Replace(plgoSource, "//{funcdec}", funcdec, 1)
+	err = ioutil.WriteFile(path.Join(packagePath, "pl.go"), []byte(plgoSource), 0644)
+	if err != nil {
+		return fmt.Errorf("Cannot write file tempdir: %s", err)
+	}
+	//create the exported methods file
+	methodsFile, err := os.Create(path.Join(packagePath, "methods.go"))
+	if err != nil {
+		return fmt.Errorf("Cannot write file tempdir: %s", err)
+	}
+	funcMap := template.FuncMap{
+		"ToLower": func(str string) string { return strings.ToLower(str[0:1]) + str[1:] },
+	}
+	t := template.Must(template.New("").Funcs(funcMap).Parse(methods))
+	err = t.Execute(methodsFile, functionNames)
+	if err != nil {
+		return fmt.Errorf("Cannot write file tempdir: %s", err)
+	}
+	return nil
+}
 
-	//go build -v -buildmode=c-shared -o my_procedures.so my_procedures.go pl.go
-	goBuild := exec.Command("go", "build", "-v", "-buildmode=c-shared", "-o", path.Base(dir)+".so")
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(out, in)
+	if err != nil {
+		return err
+	}
+	return out.Close()
+}
+
+func buildPackage(buildPath, packagePath string) error {
+	goBuild := exec.Command("go", "build", "-v", "-buildmode=c-shared",
+		"-o", path.Join(buildPath, path.Base(packagePath)+".so"),
+		path.Join(buildPath, "package.go"),
+		path.Join(buildPath, "methods.go"),
+		path.Join(buildPath, "pl.go"),
+	)
+
 	stderr, err := goBuild.StderrPipe()
 	if err != nil {
 		panic(err)
@@ -217,10 +215,88 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+
 	err = goBuild.Start()
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("Cannot build package: %s", err)
 	}
 	io.Copy(os.Stderr, stderr)
 	io.Copy(os.Stdout, stdout)
+	err = goBuild.Wait()
+	if err != nil {
+		return fmt.Errorf("Cannot build package: %s", err)
+	}
+
+	return nil
+}
+
+func printUsage() {
+	fmt.Println(`Usage:
+plgo build [path/to/package]
+or
+plgo install [path/to/package]`)
+}
+
+func main() {
+	flag.Parse()
+	if len(flag.Args()) == 0 || len(flag.Args()) > 2 || (flag.Arg(0) != "build" && flag.Arg(0) != "install") {
+		printUsage()
+		return
+	}
+	//set package path
+	packagePath := "."
+	if len(flag.Args()) == 2 {
+		packagePath = flag.Arg(1)
+	}
+	fset, packageAst, err := parsePackage(packagePath)
+	if err != nil {
+		fmt.Println(err)
+		printUsage()
+		return
+	}
+	ast.Walk(new(FuncVisitor), packageAst)
+	ast.Walk(new(ImportVisitor), packageAst)
+	ast.Walk(new(PLGOVisitor), packageAst)
+	tempPackagePath, err := ioutil.TempDir("", "plgo")
+	if err != nil {
+		fmt.Println("Cannot get tempdir:", err)
+		return
+	}
+	err = writeFiles(tempPackagePath, fset, packageAst)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	err = buildPackage(tempPackagePath, packagePath)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	switch flag.Arg(0) {
+	case "build":
+		err = copyFile(
+			path.Join(tempPackagePath, path.Base(packagePath)+".so"),
+			path.Join(".", path.Base(packagePath)+".so"),
+		)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+	case "install":
+		pglibdir, err := exec.Command("pg_config", "--pkglibdir").CombinedOutput()
+		if err != nil {
+			fmt.Println("Cannot get postgresql libdir:", err)
+			return
+		}
+		err = copyFile(
+			path.Join(tempPackagePath, path.Base(packagePath)+".so"),
+			path.Join(string(pglibdir), path.Base(packagePath)+".so"),
+		)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		//TODO create sql and run it in db
+	}
+
 }
