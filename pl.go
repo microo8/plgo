@@ -264,11 +264,17 @@ import (
 	"unsafe"
 )
 
+//TODO check all public things
+
 //this has to be here
 func main() {}
 
+//TODO there must be and Datum?
+
 //Datum is the return type of postgresql
 type Datum C.Datum
+
+//TODO DB must not be a singleton?
 
 //DB connection
 type DB struct {
@@ -339,6 +345,8 @@ func (e *elog) Printf(format string, args ...interface{}) {
 func (e *elog) Println(args ...interface{}) {
 	e._print(fmt.Sprintln(args...))
 }
+
+//TODO check stdin and stderr as the notice/error elog?
 
 //NewNoticeLogger creates an logger that writes into NOTICE elog
 func NewNoticeLogger(prefix string, flag int) *log.Logger {

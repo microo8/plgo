@@ -40,6 +40,13 @@ func {{$funcName}}(fcinfo *FuncInfo) Datum {
 {{end}}
 `
 
+const sql = `{{range . }}
+CREATE OR REPLACE FUNCTION {{.Schema}}.{{.Name}}({{range $funcParams}}{{.Name}} {{.Type}}, {{end}})
+RETURNS {{.ReturnType}} AS
+'$libdir/{{..Package}}', '{{.Name}}'
+LANGUAGE c IMMUTABLE STRICT;
+{{end}}`
+
 //Param represents the parameters of the functions
 type Param struct {
 	Name, Type string
@@ -112,6 +119,7 @@ func (v *PLGOVisitor) Visit(node ast.Node) ast.Visitor {
 	return v
 }
 
+//parsePackage parses the go package and returns the FileSet and AST
 func parsePackage(packagePath string) (*token.FileSet, *ast.Package, error) {
 	fset := token.NewFileSet()
 	f, err := parser.ParseDir(fset, packagePath, nil, parser.ParseComments)
@@ -128,6 +136,7 @@ func parsePackage(packagePath string) (*token.FileSet, *ast.Package, error) {
 	return fset, packageAst, nil
 }
 
+//writeFiles creates users module, the plgo library and the methods wrapper in the temporary directory
 func writeFiles(packagePath string, fset *token.FileSet, packageAst *ast.Package) error {
 	//write users package
 	packageFile, err := os.Create(path.Join(packagePath, "package.go"))
@@ -143,7 +152,8 @@ func writeFiles(packagePath string, fset *token.FileSet, packageAst *ast.Package
 	}
 	//write and modify plgo package
 	plgoPath := path.Join(os.Getenv("GOPATH"), "src", "github.com", "microo8", "plgo", "pl.go")
-	if _, err := os.Stat(plgoPath); os.IsNotExist(err) {
+	fmt.Println("plgoPath:", plgoPath)
+	if _, err = os.Stat(plgoPath); os.IsNotExist(err) {
 		return fmt.Errorf("Package github.com/microo8/plgo not installed\nplease install it with: go get -u github.com/microo8/plgo/... ")
 	}
 	plgoSourceBin, err := ioutil.ReadFile(plgoPath)
@@ -200,33 +210,19 @@ func copyFile(src, dst string) error {
 }
 
 func buildPackage(buildPath, packagePath string) error {
-	goBuild := exec.Command("go", "build", "-v", "-buildmode=c-shared",
+	goBuild := exec.Command("go", "build", "-buildmode=c-shared",
 		"-o", path.Join(buildPath, path.Base(packagePath)+".so"),
 		path.Join(buildPath, "package.go"),
 		path.Join(buildPath, "methods.go"),
 		path.Join(buildPath, "pl.go"),
 	)
-
-	stderr, err := goBuild.StderrPipe()
-	if err != nil {
-		panic(err)
-	}
-	stdout, err := goBuild.StdoutPipe()
-	if err != nil {
-		panic(err)
-	}
-
-	err = goBuild.Start()
+	//TODO test the compile errors and print it out
+	goBuild.Stdout = os.Stdout
+	goBuild.Stderr = os.Stderr
+	err := goBuild.Run()
 	if err != nil {
 		return fmt.Errorf("Cannot build package: %s", err)
 	}
-	io.Copy(os.Stderr, stderr)
-	io.Copy(os.Stdout, stdout)
-	err = goBuild.Wait()
-	if err != nil {
-		return fmt.Errorf("Cannot build package: %s", err)
-	}
-
 	return nil
 }
 
@@ -283,20 +279,31 @@ func main() {
 			return
 		}
 	case "install":
-		pglibdir, err := exec.Command("pg_config", "--pkglibdir").CombinedOutput()
+		pglibdirBin, err := exec.Command("pg_config", "--pkglibdir").CombinedOutput()
 		if err != nil {
 			fmt.Println("Cannot get postgresql libdir:", err)
 			return
 		}
+		pglibdir := strings.TrimSpace(string(pglibdirBin))
 		err = copyFile(
 			path.Join(tempPackagePath, path.Base(packagePath)+".so"),
-			path.Join(string(pglibdir), path.Base(packagePath)+".so"),
+			path.Join(pglibdir, path.Base(packagePath)+".so"),
 		)
+		if err != nil && os.IsPermission(err) {
+			cp := exec.Command("sudo", "cp",
+				path.Join(tempPackagePath, path.Base(packagePath)+".so"),
+				path.Join(pglibdir, path.Base(packagePath)+".so"),
+			)
+			cp.Stdin = os.Stdin
+			cp.Stderr = os.Stderr
+			cp.Stdout = os.Stdout
+			fmt.Println("Copying the shared objects file to postgres libdir, must get permissions")
+			err = cp.Run()
+		}
 		if err != nil {
-			fmt.Println(err)
+			fmt.Println("Cannot copy the shared objects file to postgres libdir:", err)
 			return
 		}
 		//TODO create sql and run it in db
 	}
-
 }
