@@ -259,7 +259,6 @@ import (
 	"fmt"
 	"log"
 	"reflect"
-	"sync"
 	"time"
 	"unsafe"
 )
@@ -269,17 +268,11 @@ import (
 //this has to be here
 func main() {}
 
-//TODO there must be and Datum?
-
 //Datum is the return type of postgresql
 type Datum C.Datum
 
-//TODO DB must not be a singleton?
-
-//DB connection
-type DB struct {
-	lock sync.Mutex
-}
+//DB represents the db connection, can be made only once
+type DB struct{}
 
 //Open returns DB connection and runs SPI_connect
 func Open() (*DB, error) {
@@ -291,8 +284,6 @@ func Open() (*DB, error) {
 
 //Close closes the DB connection
 func (db *DB) Close() error {
-	db.lock.Lock()
-	defer db.lock.Unlock()
 	if C.SPI_finish() != C.SPI_OK_FINISH {
 		return errors.New("Error closing DB")
 	}
@@ -304,58 +295,34 @@ type elogLevel int
 
 //elogLevel constants
 const (
-	NOTICE elogLevel = iota
-	ERROR
+	noticeLevel elogLevel = iota
+	errorLevel
 )
 
 //elog represents the elog io.Writter to use with Logger
 type elog struct {
-	lock  sync.Mutex
 	Level elogLevel
 }
 
 //Write is an notify implemented as io.Writter
 func (e *elog) Write(p []byte) (n int, err error) {
-	e._print(string(p))
+	switch e.Level {
+	case noticeLevel:
+		C.elog_notice(C.CString(string(p)))
+	case errorLevel:
+		C.elog_error(C.CString(string(p)))
+	}
 	return len(p), nil
 }
 
-func (e *elog) _print(str string) {
-	e.lock.Lock()
-	defer e.lock.Unlock()
-	switch e.Level {
-	case NOTICE:
-		C.elog_notice(C.CString(str))
-	case ERROR:
-		C.elog_error(C.CString(str))
-	}
-}
-
-//Print writes the arguments to elog
-func (e *elog) Print(args ...interface{}) {
-	e._print(fmt.Sprint(args...))
-}
-
-//Printf writes formated arguments to elog
-func (e *elog) Printf(format string, args ...interface{}) {
-	e._print(fmt.Sprintf(format, args...))
-}
-
-//Println writes the arguments to elog as new line
-func (e *elog) Println(args ...interface{}) {
-	e._print(fmt.Sprintln(args...))
-}
-
-//TODO check stdin and stderr as the notice/error elog?
-
 //NewNoticeLogger creates an logger that writes into NOTICE elog
 func NewNoticeLogger(prefix string, flag int) *log.Logger {
-	return log.New(&elog{Level: NOTICE}, prefix, flag)
+	return log.New(&elog{Level: noticeLevel}, prefix, flag)
 }
 
 //NewErrorLogger creates an logger that writes into ERROR elog
 func NewErrorLogger(prefix string, flag int) *log.Logger {
-	return log.New(&elog{Level: ERROR}, prefix, flag)
+	return log.New(&elog{Level: errorLevel}, prefix, flag)
 }
 
 //FuncInfo is the type of parameters that all functions get
@@ -598,8 +565,6 @@ func (db *DB) Prepare(query string, types []string) (*Stmt, error) {
 		}
 		typeIdsP = &typeIds[0]
 	}
-	db.lock.Lock()
-	defer db.lock.Unlock()
 	cplan := C.SPI_prepare(C.CString(query), C.int(len(types)), typeIdsP)
 	if cplan != nil {
 		return &Stmt{spiPlan: cplan, db: db}, nil
@@ -611,8 +576,6 @@ func (db *DB) Prepare(query string, types []string) (*Stmt, error) {
 //multiple Rows result, that can be iterated
 func (stmt *Stmt) Query(args ...interface{}) (*Rows, error) {
 	valuesP, nullsP := spiArgs(args)
-	stmt.db.lock.Lock()
-	defer stmt.db.lock.Unlock()
 	rv := C.SPI_execute_plan(stmt.spiPlan, valuesP, nullsP, C.true, 0)
 	if rv == C.SPI_OK_SELECT && C.SPI_processed > 0 {
 		return newRows(C.SPI_tuptable.vals, C.SPI_tuptable.tupdesc, C.SPI_processed), nil
@@ -623,8 +586,6 @@ func (stmt *Stmt) Query(args ...interface{}) (*Rows, error) {
 //QueryRow executes the prepared Stmt with the provided args and returns one row result
 func (stmt *Stmt) QueryRow(args ...interface{}) (*Row, error) {
 	valuesP, nullsP := spiArgs(args)
-	stmt.db.lock.Lock()
-	defer stmt.db.lock.Unlock()
 	rv := C.SPI_execute_plan(stmt.spiPlan, valuesP, nullsP, C.false, 1)
 	if rv >= C.int(0) && C.SPI_processed == 1 {
 		return &Row{
@@ -638,8 +599,6 @@ func (stmt *Stmt) QueryRow(args ...interface{}) (*Row, error) {
 //Exec executes a prepared query Stmt with no result
 func (stmt *Stmt) Exec(args ...interface{}) error {
 	valuesP, nullsP := spiArgs(args)
-	stmt.db.lock.Lock()
-	defer stmt.db.lock.Unlock()
 	rv := C.SPI_execute_plan(stmt.spiPlan, valuesP, nullsP, C.false, 0)
 	if rv >= C.int(0) && C.SPI_processed == 1 {
 		return nil

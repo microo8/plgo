@@ -16,6 +16,7 @@ import (
 	"strings"
 )
 
+//TODO if the func nas no return value
 const methods = `package main
 
 /*
@@ -24,22 +25,23 @@ const methods = `package main
 */
 import "C"
 
-{{range $funcName, $funcParams := .}}
+{{range $funcName, $func := .}}
 //export {{$funcName}}
 func {{$funcName}}(fcinfo *FuncInfo) Datum {
-	{{range $funcParams}}var {{.Name}} {{.Type}}
+	{{range $func.Params}}var {{.Name}} {{.Type}}
 	{{end}}
 	fcinfo.Scan(
-		{{range $funcParams}}&{{.Name}},
+		{{range $func.Params}}&{{.Name}},
 		{{end}})
 	ret := {{$funcName | ToLower }}(
-		{{range $funcParams}}{{.Name}},
+		{{range $func.Params}}{{.Name}},
 		{{end}})
 	return ToDatum(ret)
 }
 {{end}}
 `
 
+//TODO triggers
 const sql = `{{range . }}
 CREATE OR REPLACE FUNCTION {{.Schema}}.{{.Name}}({{range $funcParams}}{{.Name}} {{.Type}}, {{end}})
 RETURNS {{.ReturnType}} AS
@@ -47,12 +49,52 @@ RETURNS {{.ReturnType}} AS
 LANGUAGE c IMMUTABLE STRICT;
 {{end}}`
 
-//Param represents the parameters of the functions
+//Param the parameters of the functions
 type Param struct {
 	Name, Type string
 }
 
-var functionNames = make(map[string][]Param)
+//Function is a list of parameters and the return type
+type Function struct {
+	Params     []Param
+	ReturnType string
+}
+
+//NewFunction returns a new Function, inicialized from ast.FuncDecl
+func NewFunction(function *ast.FuncDecl) (*Function, error) {
+	f := functionNames[function.Name.Name]
+	if f == nil {
+		f = new(Function)
+	}
+	for _, param := range function.Type.Params.List {
+		paramType, ok := param.Type.(*ast.Ident)
+		if !ok {
+			panic("not ok param type") //TODO
+		}
+		for _, name := range param.Names {
+			f.Params = append(f.Params, Param{Name: name.Name, Type: paramType.Name})
+		}
+	}
+	if len(function.Type.Results.List) > 1 {
+		return nil, fmt.Errorf("Function %s has multiple return types", function.Name.Name)
+	}
+	if len(function.Type.Results.List) == 0 {
+		return f, nil
+	}
+	resType, ok := function.Type.Results.List[0].Type.(*ast.Ident)
+	if !ok {
+		return nil, fmt.Errorf("Function %s has not suported return type", function.Name.Name)
+	}
+	f.ReturnType = resType.Name
+	return f, nil
+}
+
+//IsTrigger is true if the function has TriggerData argument and Datum return type
+func (f *Function) IsTrigger() bool {
+	return false //TODO
+}
+
+var functionNames = make(map[string]*Function)
 
 //FuncVisitor is an function that can be used like Visitor interface for ast.Walk
 type FuncVisitor struct{}
@@ -64,15 +106,10 @@ func (v *FuncVisitor) Visit(node ast.Node) ast.Visitor {
 	if !ok || !ast.IsExported(function.Name.Name) {
 		return v
 	}
-
-	for _, param := range function.Type.Params.List {
-		paramType, ok := param.Type.(*ast.Ident)
-		if !ok {
-			panic("not ok param type") //TODO
-		}
-		for _, name := range param.Names {
-			functionNames[function.Name.Name] = append(functionNames[function.Name.Name], Param{Name: name.Name, Type: paramType.Name})
-		}
+	var err error
+	functionNames[function.Name.Name], err = NewFunction(function)
+	if err != nil {
+		panic(err) //TODO
 	}
 	function.Name.Name = strings.ToLower(function.Name.Name[0:1]) + function.Name.Name[1:]
 
@@ -216,7 +253,6 @@ func buildPackage(buildPath, packagePath string) error {
 		path.Join(buildPath, "methods.go"),
 		path.Join(buildPath, "pl.go"),
 	)
-	//TODO test the compile errors and print it out
 	goBuild.Stdout = os.Stdout
 	goBuild.Stderr = os.Stderr
 	err := goBuild.Run()
