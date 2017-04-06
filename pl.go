@@ -325,18 +325,18 @@ func NewErrorLogger(prefix string, flag int) *log.Logger {
 	return log.New(&elog{Level: errorLevel}, prefix, flag)
 }
 
-//FuncInfo is the type of parameters that all functions get
-type FuncInfo C.FunctionCallInfoData
+//funcInfo is the type of parameters that all functions get
+type funcInfo C.FunctionCallInfoData
 
 //CalledAsTrigger checks if the function is called as trigger
-func (fcinfo *FuncInfo) CalledAsTrigger() bool {
+func (fcinfo *funcInfo) CalledAsTrigger() bool {
 	return C.called_as_trigger((*C.struct_FunctionCallInfoData)(unsafe.Pointer(fcinfo))) == C.true
 }
 
 //TODO Scan must return argument also if the function is called as trigger
 
 //Scan sets the args to the function parameter values (converted from PostgreSQL types to Go types)
-func (fcinfo *FuncInfo) Scan(args ...interface{}) error {
+func (fcinfo *funcInfo) Scan(args ...interface{}) error {
 	for i, arg := range args {
 		funcArg := C.get_arg((*C.struct_FunctionCallInfoData)(unsafe.Pointer(fcinfo)), C.uint(i))
 		argOid := C.get_call_expr_argtype(fcinfo.flinfo.fn_expr, C.int(i))
@@ -349,7 +349,7 @@ func (fcinfo *FuncInfo) Scan(args ...interface{}) error {
 }
 
 //TriggerData returns Trigger data, if the function was called as trigger, else nil
-func (fcinfo *FuncInfo) TriggerData() *TriggerData {
+func (fcinfo *funcInfo) TriggerData() *TriggerData {
 	if !fcinfo.CalledAsTrigger() {
 		return nil
 	}
@@ -448,7 +448,7 @@ func (row *TriggerRow) Scan(args ...interface{}) error {
 
 //Set sets the i'th value in the row
 func (row *TriggerRow) Set(i int, val interface{}) {
-	row.attrs[i] = (C.Datum)(ToDatum(val))
+	row.attrs[i] = (C.Datum)(toDatum(val))
 }
 
 func makeArray(elemtype C.Oid, arg interface{}) Datum {
@@ -459,7 +459,7 @@ func makeArray(elemtype C.Oid, arg interface{}) Datum {
 
 	datums := make([]C.Datum, s.Len())
 	for i := 0; i < s.Len(); i++ {
-		datums[i] = (C.Datum)(ToDatum(s.Index(i).Interface()))
+		datums[i] = (C.Datum)(toDatum(s.Index(i).Interface()))
 	}
 	return (Datum)(C.array_to_datum(elemtype, &datums[0], C.int(s.Len())))
 }
@@ -472,8 +472,8 @@ func makeSlice(val C.Datum) []C.Datum {
 	return slice
 }
 
-//ToDatum returns the Postgresql C type from Golang type
-func ToDatum(val interface{}) Datum {
+//toDatum returns the Postgresql C type from Golang type
+func toDatum(val interface{}) Datum {
 	switch v := val.(type) {
 	case error:
 		return (Datum)(C.cstring_to_datum(C.CString(v.Error())))
@@ -533,7 +533,7 @@ func ToDatum(val interface{}) Datum {
 	case *TriggerRow:
 		isNull := make([]C.bool, len(v.attrs))
 		for i, attr := range v.attrs {
-			if attr == (C.Datum)(ToDatum(nil)) {
+			if attr == (C.Datum)(toDatum(nil)) {
 				isNull[i] = C.true
 			} else {
 				isNull[i] = C.false
@@ -611,7 +611,7 @@ func spiArgs(args []interface{}) (valuesP *C.Datum, nullsP *C.char) {
 		values := make([]Datum, len(args))
 		nulls := make([]C.char, len(args))
 		for i, arg := range args {
-			values[i] = ToDatum(arg)
+			values[i] = toDatum(arg)
 			nulls[i] = C.char(' ')
 		}
 		valuesP = (*C.Datum)(unsafe.Pointer(&values[0]))

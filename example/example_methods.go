@@ -6,6 +6,11 @@ import (
 	"github.com/microo8/plgo"
 )
 
+func Meh() {
+	logger := plgo.NewErrorLogger("", log.Ltime|log.Lshortfile)
+	logger.Println("meh")
+}
+
 //ConcatAll concatenates all values of an column in a given table
 func ConcatAll(tableName, colName string) string {
 	logger := plgo.NewErrorLogger("", log.Ltime|log.Lshortfile)
@@ -30,4 +35,8 @@ func ConcatAll(tableName, colName string) string {
 		ret += val
 	}
 	return ret
+}
+
+func CreatedTimeTrigger(td *plgo.TriggerData) *plgo.TriggerRow {
+	return nil
 }

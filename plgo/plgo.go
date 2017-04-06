@@ -7,152 +7,46 @@ import (
 	"go/format"
 	"go/parser"
 	"go/token"
-	"html/template"
 	"io"
 	"io/ioutil"
 	"os"
 	"os/exec"
 	"path"
 	"strings"
+	"text/template"
 )
 
-//TODO if the func nas no return value
-const methods = `package main
+//Remover is an function that can be used like Visitor interface for ast.Walk
+type Remover struct{}
 
-/*
-#include "postgres.h"
-#include "fmgr.h"
-*/
-import "C"
-
-{{range $funcName, $func := .}}
-//export {{$funcName}}
-func {{$funcName}}(fcinfo *FuncInfo) Datum {
-	{{range $func.Params}}var {{.Name}} {{.Type}}
-	{{end}}
-	fcinfo.Scan(
-		{{range $func.Params}}&{{.Name}},
-		{{end}})
-	ret := {{$funcName | ToLower }}(
-		{{range $func.Params}}{{.Name}},
-		{{end}})
-	return ToDatum(ret)
-}
-{{end}}
-`
-
-//TODO triggers
-const sql = `{{range . }}
-CREATE OR REPLACE FUNCTION {{.Schema}}.{{.Name}}({{range $funcParams}}{{.Name}} {{.Type}}, {{end}})
-RETURNS {{.ReturnType}} AS
-'$libdir/{{..Package}}', '{{.Name}}'
-LANGUAGE c IMMUTABLE STRICT;
-{{end}}`
-
-//Param the parameters of the functions
-type Param struct {
-	Name, Type string
-}
-
-//Function is a list of parameters and the return type
-type Function struct {
-	Params     []Param
-	ReturnType string
-}
-
-//NewFunction returns a new Function, inicialized from ast.FuncDecl
-func NewFunction(function *ast.FuncDecl) (*Function, error) {
-	f := functionNames[function.Name.Name]
-	if f == nil {
-		f = new(Function)
-	}
-	for _, param := range function.Type.Params.List {
-		paramType, ok := param.Type.(*ast.Ident)
+//Visit removes plgo selectors and plgo import
+func (v *Remover) Visit(node ast.Node) ast.Visitor {
+	switch n := node.(type) {
+	case *ast.ImportSpec:
+		if n.Path.Value == "\"github.com/microo8/plgo\"" {
+			n.Path.Value = ""
+		}
+	case *ast.CallExpr:
+		selector, ok := n.Fun.(*ast.SelectorExpr)
 		if !ok {
-			panic("not ok param type") //TODO
+			break
 		}
-		for _, name := range param.Names {
-			f.Params = append(f.Params, Param{Name: name.Name, Type: paramType.Name})
+		expr, ok := selector.X.(*ast.Ident)
+		if !ok || expr.Name != plgo {
+			break
 		}
+		n.Fun = selector.Sel
+	case *ast.StarExpr:
+		sel, ok := n.X.(*ast.SelectorExpr)
+		if !ok {
+			break
+		}
+		ident, ok := sel.X.(*ast.Ident)
+		if !ok || ident.Name != plgo {
+			break
+		}
+		n.X = sel.Sel
 	}
-	if len(function.Type.Results.List) > 1 {
-		return nil, fmt.Errorf("Function %s has multiple return types", function.Name.Name)
-	}
-	if len(function.Type.Results.List) == 0 {
-		return f, nil
-	}
-	resType, ok := function.Type.Results.List[0].Type.(*ast.Ident)
-	if !ok {
-		return nil, fmt.Errorf("Function %s has not suported return type", function.Name.Name)
-	}
-	f.ReturnType = resType.Name
-	return f, nil
-}
-
-//IsTrigger is true if the function has TriggerData argument and Datum return type
-func (f *Function) IsTrigger() bool {
-	return false //TODO
-}
-
-var functionNames = make(map[string]*Function)
-
-//FuncVisitor is an function that can be used like Visitor interface for ast.Walk
-type FuncVisitor struct{}
-
-//Visit just calls itself
-func (v *FuncVisitor) Visit(node ast.Node) ast.Visitor {
-	//is exported function
-	function, ok := node.(*ast.FuncDecl)
-	if !ok || !ast.IsExported(function.Name.Name) {
-		return v
-	}
-	var err error
-	functionNames[function.Name.Name], err = NewFunction(function)
-	if err != nil {
-		panic(err) //TODO
-	}
-	function.Name.Name = strings.ToLower(function.Name.Name[0:1]) + function.Name.Name[1:]
-
-	//TODO test param type, so that the type is supported string, int, float64 etc.
-	//params := function.Type.Params
-	//for i, param := range params.List {
-	//TODO test
-	//}
-
-	return v
-}
-
-//ImportVisitor is an function that can be used like Visitor interface for ast.Walk
-type ImportVisitor struct{}
-
-//Visit removes plgo imports
-func (v *ImportVisitor) Visit(node ast.Node) ast.Visitor {
-	imp, ok := node.(*ast.ImportSpec)
-	if !ok || imp.Path.Value != "\"github.com/microo8/plgo\"" {
-		return v
-	}
-	imp.Path.Value = ""
-	return v
-}
-
-//PLGOVisitor is an function that can be used like Visitor interface for ast.Walk
-type PLGOVisitor struct{}
-
-//Visit removes plgo imports
-func (v *PLGOVisitor) Visit(node ast.Node) ast.Visitor {
-	call, ok := node.(*ast.CallExpr)
-	if !ok {
-		return v
-	}
-	selector, ok := call.Fun.(*ast.SelectorExpr)
-	if !ok {
-		return v
-	}
-	expr, ok := selector.X.(*ast.Ident)
-	if !ok || expr.Name != "plgo" {
-		return v
-	}
-	call.Fun = selector.Sel
 	return v
 }
 
@@ -173,9 +67,7 @@ func parsePackage(packagePath string) (*token.FileSet, *ast.Package, error) {
 	return fset, packageAst, nil
 }
 
-//writeFiles creates users module, the plgo library and the methods wrapper in the temporary directory
-func writeFiles(packagePath string, fset *token.FileSet, packageAst *ast.Package) error {
-	//write users package
+func writeUserPackage(packagePath string, fset *token.FileSet, packageAst *ast.Package) error {
 	packageFile, err := os.Create(path.Join(packagePath, "package.go"))
 	if err != nil {
 		return fmt.Errorf("Cannot write file tempdir: %s", err)
@@ -187,10 +79,13 @@ func writeFiles(packagePath string, fset *token.FileSet, packageAst *ast.Package
 	if err != nil {
 		return fmt.Errorf("Cannot write file tempdir: %s", err)
 	}
-	//write and modify plgo package
+	return nil
+}
+
+func writeplgo(packagePath string) error {
 	plgoPath := path.Join(os.Getenv("GOPATH"), "src", "github.com", "microo8", "plgo", "pl.go")
 	fmt.Println("plgoPath:", plgoPath)
-	if _, err = os.Stat(plgoPath); os.IsNotExist(err) {
+	if _, err := os.Stat(plgoPath); os.IsNotExist(err) {
 		return fmt.Errorf("Package github.com/microo8/plgo not installed\nplease install it with: go get -u github.com/microo8/plgo/... ")
 	}
 	plgoSourceBin, err := ioutil.ReadFile(plgoPath)
@@ -213,7 +108,10 @@ func writeFiles(packagePath string, fset *token.FileSet, packageAst *ast.Package
 	if err != nil {
 		return fmt.Errorf("Cannot write file tempdir: %s", err)
 	}
-	//create the exported methods file
+	return nil
+}
+
+func writeExportedMethods(packagePath string) error {
 	methodsFile, err := os.Create(path.Join(packagePath, "methods.go"))
 	if err != nil {
 		return fmt.Errorf("Cannot write file tempdir: %s", err)
@@ -222,11 +120,24 @@ func writeFiles(packagePath string, fset *token.FileSet, packageAst *ast.Package
 		"ToLower": func(str string) string { return strings.ToLower(str[0:1]) + str[1:] },
 	}
 	t := template.Must(template.New("").Funcs(funcMap).Parse(methods))
-	err = t.Execute(methodsFile, functionNames)
+	err = t.Execute(methodsFile, functionNames) //TODO format the output
 	if err != nil {
 		return fmt.Errorf("Cannot write file tempdir: %s", err)
 	}
 	return nil
+}
+
+//writeFiles creates users module, the plgo library and the methods wrapper in the temporary directory
+func writeFiles(packagePath string, fset *token.FileSet, packageAst *ast.Package) error {
+	err := writeUserPackage(packagePath, fset, packageAst)
+	if err != nil {
+		return err
+	}
+	err = writeplgo(packagePath)
+	if err != nil {
+		return err
+	}
+	return writeExportedMethods(packagePath)
 }
 
 func copyFile(src, dst string) error {
@@ -287,8 +198,7 @@ func main() {
 		return
 	}
 	ast.Walk(new(FuncVisitor), packageAst)
-	ast.Walk(new(ImportVisitor), packageAst)
-	ast.Walk(new(PLGOVisitor), packageAst)
+	ast.Walk(new(Remover), packageAst)
 	tempPackagePath, err := ioutil.TempDir("", "plgo")
 	if err != nil {
 		fmt.Println("Cannot get tempdir:", err)
