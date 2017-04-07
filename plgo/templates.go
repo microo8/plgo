@@ -6,30 +6,7 @@ const (
 	triggerRow  = "TriggerRow"
 
 	//TODO triggers (will have TriggerData arg, so must be extracted from fcinfo)
-	methods = `package main
 
-/*
-#include "postgres.h"
-#include "fmgr.h"
-*/
-import "C"
-
-{{range $funcName, $func := .}}
-//export {{$funcName}}
-func {{$funcName}}(fcinfo *funcInfo) Datum {
-    {{if $func.IsTrigger }}{{end}}
-	{{range $func.Params}}var {{.Name}} {{.Type}}
-	{{end}}
-	fcinfo.Scan(
-		{{range $func.Params}}&{{.Name}},
-		{{end}})
-	{{ if ne (len $func.ReturnType) 0 }}ret :={{end}} {{$funcName | ToLower }}(
-		{{range $func.Params}}{{.Name}},
-		{{end}})
-	{{ if ne (len $func.ReturnType) 0 }}return toDatum(ret){{else}}return toDatum(nil){{end}}
-}
-{{end}}
-`
 	//TODO triggers
 	sql = `{{range . }}
 CREATE OR REPLACE FUNCTION {{.Schema}}.{{.Name}}({{range $funcParams}}{{.Name}} {{.Type}}, {{end}})

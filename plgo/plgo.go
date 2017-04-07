@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"go/ast"
@@ -13,7 +14,6 @@ import (
 	"os/exec"
 	"path"
 	"strings"
-	"text/template"
 )
 
 //Remover is an function that can be used like Visitor interface for ast.Walk
@@ -67,8 +67,8 @@ func parsePackage(packagePath string) (*token.FileSet, *ast.Package, error) {
 	return fset, packageAst, nil
 }
 
-func writeUserPackage(packagePath string, fset *token.FileSet, packageAst *ast.Package) error {
-	packageFile, err := os.Create(path.Join(packagePath, "package.go"))
+func writeUserPackage(tempPackagePath string, fset *token.FileSet, packageAst *ast.Package) error {
+	packageFile, err := os.Create(path.Join(tempPackagePath, "package.go"))
 	if err != nil {
 		return fmt.Errorf("Cannot write file tempdir: %s", err)
 	}
@@ -82,7 +82,7 @@ func writeUserPackage(packagePath string, fset *token.FileSet, packageAst *ast.P
 	return nil
 }
 
-func writeplgo(packagePath string) error {
+func writeplgo(tempPackagePath string, functions []CodeWriter) error {
 	plgoPath := path.Join(os.Getenv("GOPATH"), "src", "github.com", "microo8", "plgo", "pl.go")
 	fmt.Println("plgoPath:", plgoPath)
 	if _, err := os.Stat(plgoPath); os.IsNotExist(err) {
@@ -100,27 +100,42 @@ func writeplgo(packagePath string) error {
 	}
 	plgoSource = strings.Replace(plgoSource, "/usr/include/postgresql/server", string(postgresIncludeDir), 1)
 	var funcdec string
-	for funcName := range functionNames {
-		funcdec += "PG_FUNCTION_INFO_V1(" + funcName + ");"
+	for _, f := range functions {
+		funcdec += f.FuncDec()
 	}
 	plgoSource = strings.Replace(plgoSource, "//{funcdec}", funcdec, 1)
-	err = ioutil.WriteFile(path.Join(packagePath, "pl.go"), []byte(plgoSource), 0644)
+	err = ioutil.WriteFile(path.Join(tempPackagePath, "pl.go"), []byte(plgoSource), 0644)
 	if err != nil {
 		return fmt.Errorf("Cannot write file tempdir: %s", err)
 	}
 	return nil
 }
 
-func writeExportedMethods(packagePath string) error {
-	methodsFile, err := os.Create(path.Join(packagePath, "methods.go"))
+func writeExportedMethods(tempPackagePath string, functions []CodeWriter) error {
+	buf := bytes.NewBuffer(nil)
+	_, err := buf.WriteString(`package main
+
+/*
+#include "postgres.h"
+#include "fmgr.h"
+*/
+import "C"
+`)
 	if err != nil {
 		return fmt.Errorf("Cannot write file tempdir: %s", err)
 	}
-	funcMap := template.FuncMap{
-		"ToLower": func(str string) string { return strings.ToLower(str[0:1]) + str[1:] },
+	for _, f := range functions {
+		f.Header(buf)
+		f.ParamScan(buf)
+		f.FunctionCall(buf)
+		f.Return(buf)
+		f.Footer(buf)
 	}
-	t := template.Must(template.New("").Funcs(funcMap).Parse(methods))
-	err = t.Execute(methodsFile, functionNames) //TODO format the output
+	code, err := format.Source(buf.Bytes())
+	if err != nil {
+		panic(err)
+	}
+	err = ioutil.WriteFile(path.Join(tempPackagePath, "methods.go"), code, 0644)
 	if err != nil {
 		return fmt.Errorf("Cannot write file tempdir: %s", err)
 	}
@@ -128,16 +143,16 @@ func writeExportedMethods(packagePath string) error {
 }
 
 //writeFiles creates users module, the plgo library and the methods wrapper in the temporary directory
-func writeFiles(packagePath string, fset *token.FileSet, packageAst *ast.Package) error {
-	err := writeUserPackage(packagePath, fset, packageAst)
+func writeFiles(tempPackagePath string, fset *token.FileSet, packageAst *ast.Package, functions []CodeWriter) error {
+	err := writeUserPackage(tempPackagePath, fset, packageAst)
 	if err != nil {
 		return err
 	}
-	err = writeplgo(packagePath)
+	err = writeplgo(tempPackagePath, functions)
 	if err != nil {
 		return err
 	}
-	return writeExportedMethods(packagePath)
+	return writeExportedMethods(tempPackagePath, functions)
 }
 
 func copyFile(src, dst string) error {
@@ -197,14 +212,19 @@ func main() {
 		printUsage()
 		return
 	}
-	ast.Walk(new(FuncVisitor), packageAst)
+	funcVisitor := new(FuncVisitor)
+	ast.Walk(funcVisitor, packageAst)
+	if funcVisitor.err != nil {
+		fmt.Println(err)
+		return
+	}
 	ast.Walk(new(Remover), packageAst)
 	tempPackagePath, err := ioutil.TempDir("", "plgo")
 	if err != nil {
 		fmt.Println("Cannot get tempdir:", err)
 		return
 	}
-	err = writeFiles(tempPackagePath, fset, packageAst)
+	err = writeFiles(tempPackagePath, fset, packageAst, funcVisitor.functions)
 	if err != nil {
 		fmt.Println(err)
 		return

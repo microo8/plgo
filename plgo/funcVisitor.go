@@ -6,17 +6,9 @@ import (
 	"strings"
 )
 
-var functionNames = make(map[string]*Function)
-
-//Param the parameters of the functions
-type Param struct {
-	Name, Type string
-}
-
-//Function is a list of parameters and the return type
-type Function struct {
-	Params     []Param
-	ReturnType string
+//ToUnexported changes Exported function name to unexported
+func ToUnexported(name string) string {
+	return strings.ToLower(name[0:1]) + name[1:]
 }
 
 func getParamList(paramList []*ast.Field) (Params []Param, err error) {
@@ -91,34 +83,33 @@ func getReturnType(functionName string, results *ast.FieldList) (string, error) 
 	}
 }
 
-//NewFunction returns a new Function, inicialized from ast.FuncDecl
-func NewFunction(function *ast.FuncDecl) (*Function, error) {
-	f := functionNames[function.Name.Name]
-	if f == nil {
-		f = new(Function)
-	}
-	var err error
-	f.Params, err = getParamList(function.Type.Params.List)
+//NewCode parses the ast.FuncDecl and returns a new Function or An TriggerFunction
+func NewCode(function *ast.FuncDecl) (CodeWriter, error) {
+	params, err := getParamList(function.Type.Params.List)
 	if err != nil {
 		return nil, err
 	}
-	f.ReturnType, err = getReturnType(function.Name.Name, function.Type.Results)
+	returnType, err := getReturnType(function.Name.Name, function.Type.Results)
 	if err != nil {
 		return nil, err
 	}
-	if f.Params[0].Type != "TriggerData" {
-		return nil, fmt.Errorf("Function %s can return *plgo.TriggerRow when the first parameter will be *plgo.TriggerData", function.Name.Name)
+	if returnType == triggerRow {
+		if len(params) == 0 || params[0].Type != triggerData {
+			return nil, fmt.Errorf("Function %s can return *plgo.TriggerRow when the first parameter will be *plgo.TriggerData", function.Name.Name)
+		}
+		return &TriggerFunction{VoidFunction: VoidFunction{Name: function.Name.Name, Params: params[1:]}}, nil
 	}
-	return f, nil
-}
-
-//IsTrigger is true if the function has TriggerData as first argument and *plgo.TriggerRow return type
-func (f *Function) IsTrigger() bool {
-	return len(f.Params) > 0 && f.Params[0].Type == "TriggerData" && f.ReturnType == "TriggerRow"
+	if returnType == "" {
+		return &VoidFunction{Name: function.Name.Name, Params: params}, nil
+	}
+	return &Function{VoidFunction: VoidFunction{Name: function.Name.Name, Params: params}, ReturnType: returnType}, nil
 }
 
 //FuncVisitor is an function that can be used like Visitor interface for ast.Walk
-type FuncVisitor struct{}
+type FuncVisitor struct {
+	err       error
+	functions []CodeWriter
+}
 
 //Visit just calls itself
 func (v *FuncVisitor) Visit(node ast.Node) ast.Visitor {
@@ -126,10 +117,12 @@ func (v *FuncVisitor) Visit(node ast.Node) ast.Visitor {
 	if !ok || !ast.IsExported(function.Name.Name) {
 		return v
 	}
-	var err error
-	if functionNames[function.Name.Name], err = NewFunction(function); err != nil {
-		panic(err) //TODO
+	var code CodeWriter
+	code, v.err = NewCode(function)
+	if v.err != nil {
+		return nil
 	}
-	function.Name.Name = strings.ToLower(function.Name.Name[0:1]) + function.Name.Name[1:]
+	v.functions = append(v.functions, code)
+	function.Name.Name = ToUnexported(function.Name.Name)
 	return v
 }
