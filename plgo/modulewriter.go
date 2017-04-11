@@ -22,6 +22,7 @@ func ToUnexported(name string) string {
 //ModuleWriter writes the tmp module wrapper that will be build to shared object
 type ModuleWriter struct {
 	PackageName string
+	Doc         string
 	fset        *token.FileSet
 	packageAst  *ast.Package
 	functions   []CodeWriter
@@ -41,18 +42,22 @@ func NewModuleWriter(packagePath string) (*ModuleWriter, error) {
 	if !ok {
 		return nil, fmt.Errorf("No package main in %s", packagePath)
 	}
+	var packageDoc string
+	for _, packageFile := range packageAst.Files {
+		packageDoc += packageFile.Doc.Text() + "\n"
+	}
 	//collect functions from the package
 	funcVisitor := new(FuncVisitor)
 	ast.Walk(funcVisitor, packageAst)
 	if funcVisitor.err != nil {
-		return nil, err
+		return nil, funcVisitor.err
 	}
 	absPackagePath, err := filepath.Abs(packagePath)
 	if err != nil {
 		return nil, err
 	}
 	packageName := filepath.Base(absPackagePath)
-	return &ModuleWriter{PackageName: packageName, fset: fset, packageAst: packageAst, functions: funcVisitor.functions}, nil
+	return &ModuleWriter{PackageName: packageName, Doc: packageDoc, fset: fset, packageAst: packageAst, functions: funcVisitor.functions}, nil
 }
 
 //WriteModule writes the tmp module wrapper
@@ -73,10 +78,7 @@ func (mw *ModuleWriter) WriteModule() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	err = mw.writeSQL(tempPackagePath)
-	if err != nil {
-		return "", err
-	}
+
 	return tempPackagePath, nil
 }
 
@@ -152,15 +154,44 @@ import "C"
 	return nil
 }
 
-func (mw *ModuleWriter) writeSQL(tempPackagePath string) error {
-	sqlPath := filepath.Join(tempPackagePath, mw.PackageName+".sql")
+//WriteSQL writes sql file with commands to create functions in DB
+func (mw *ModuleWriter) WriteSQL(tempPackagePath string) error {
+	sqlPath := filepath.Join(tempPackagePath, mw.PackageName+"--0.1.sql")
 	sqlFile, err := os.Create(sqlPath)
-	defer sqlFile.Close()
 	if err != nil {
 		return err
 	}
+	defer sqlFile.Close()
+	sqlFile.WriteString(`-- complain if script is sourced in psql, rather than via CREATE EXTENSION
+\echo Use "CREATE EXTENSION ` + mw.PackageName + `" to load this file. \quit
+`)
 	for _, f := range mw.functions {
 		f.SQL(mw.PackageName, sqlFile)
 	}
 	return nil
+}
+
+//WriteControl writes .control file for the new postgresql extension
+func (mw *ModuleWriter) WriteControl(path string) error {
+	control := []byte(`# ` + mw.PackageName + ` extension
+comment = '` + mw.PackageName + ` extension'
+default_version = '0.1'
+relocatable = true`)
+	controlPath := filepath.Join(path, mw.PackageName+".control")
+	return ioutil.WriteFile(controlPath, control, 0644)
+}
+
+//WriteMakefile writes .control file for the new postgresql extension
+func (mw *ModuleWriter) WriteMakefile(path string) error {
+	makefile := []byte(`EXTENSION = ` + mw.PackageName + `
+DATA = ` + mw.PackageName + `--0.1.sql  # script files to install
+# REGRESS = ` + mw.PackageName + `_test     # our test script file (without extension)
+MODULES = ` + mw.PackageName + `          # our c module file to build
+
+# postgres build stuff
+PG_CONFIG = pg_config
+PGXS := $(shell $(PG_CONFIG) --pgxs)
+include $(PGXS)`)
+	makePath := filepath.Join(path, "Makefile")
+	return ioutil.WriteFile(makePath, makefile, 0644)
 }

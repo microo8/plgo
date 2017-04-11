@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"strings"
 
 	"github.com/microo8/plgo"
 )
@@ -39,4 +40,9 @@ func ConcatAll(tableName, colName string) string {
 
 func CreatedTimeTrigger(td *plgo.TriggerData) *plgo.TriggerRow {
 	return nil
+}
+
+//ConcatArray concatenates an array of strings
+func ConcatArray(strs []string) string {
+	return strings.Join(strs, "")
 }

@@ -1,155 +1,100 @@
 [![Report card](http://goreportcard.com/badge/microo8/plgo)](http://goreportcard.com/report/microo8/plgo)
 
 # plgo
-plgo is an "library" for easily creating PostgreSQL stored procedures and triggers in golang.
+plgo is an tool for easily creating PostgreSQL extensions with stored procedures and triggers in golang.
 
 contribution of all kind welcome!
 
 Creating new stored procedures with plgo is easy:
 
-1. Copy the `pl.go` to your new extension directory (optionally edit the CFLAGS path if it is different, use `pg_config --includedir-server`)
-
-2. Create `funcdec.h` header file
-
-    Add all your new procedure names
-    eg.
-    ```c
-    PG_FUNCTION_INFO_V1(my_awesome_procedure);
-    PG_FUNCTION_INFO_V1(another_awesome_procedure);
-    ```
-
-3. Create a file where your procedures will be declared
-    eg. my_procedures.go:
+Create a package where your procedures will be declared:
     ```go
+    //must be main package
+
     package main
 
-    //this C block is required
+    import (
+    	"log"
+    	"strings"
 
-    /*
-    #include "postgres.h"
-    #include "fmgr.h"
-    */
-    import "C"
-    import "log"
+    	"github.com/microo8/plgo"
+    )
 
-    //all stored procedures must be of type func(*FuncInfo) Datum
-    //before the procedure must be an comment: //export procedure_name
+    //from every exported function will be generated a stored procedure
+    //functions can take (and return) any golang builtin type (like string, int, float64, []int, ...)
 
-    //export my_awesome_procedure
-    func my_awesome_procedure(fcinfo *FuncInfo) Datum {
-	//getting the function parameters
-	var t string
-	var x int
-	fcinfo.Scan(&t, &x)
+    func Meh() {
+        //NoticeLogger for printing notice messages to elog
+    	logger := plgo.NewErrorLogger("", log.Ltime|log.Lshortfile)
+    	logger.Println("meh")
+    }
 
-	//Creating notice logger
-	logger := log.New(&elog{}, "", log.Ltime|log.Lshortfile)
+    //ConcatAll concatenates all values of an column in a given table
+    func ConcatAll(tableName, colName string) string {
+        //ErrorLogger for printing error messages to elog
+    	logger := plgo.NewErrorLogger("", log.Ltime|log.Lshortfile)
+    	db, err := plgo.Open() //open the connection to DB
+    	if err != nil {
+    		logger.Fatalf("Cannot open DB: %s", err)
+    	}
+    	defer db.Close() //db must be closed
+    	query := "select " + colName + " from " + tableName
+    	stmt, err := db.Prepare(query, nil) //prepare an statement
+    	if err != nil {
+    		logger.Fatalf("Cannot prepare query statement (%s): %s", query, err)
+    	}
+    	rows, err := stmt.Query() //execute statement
+    	if err != nil {
+    		logger.Fatalf("Query (%s) error: %s", query, err)
+    	}
+    	var ret string
+    	for rows.Next() { //iterate over the rows
+    		var val string
+    		rows.Scan(&val)
+    		ret += val
+    	}
+    	return ret
+    }
 
-	//connect to DB
-	db, err := Open()
-	if err != nil {
-		logger.Fatal(err)
-	}
-	defer db.Close()
+    //CreatedTimeTrigger is an trigger function
+    //trigger function must have the first argument of type *plgo.TriggerData
+    //and must return *plgo.TriggerRow
+    func CreatedTimeTrigger(td *plgo.TriggerData) *plgo.TriggerRow {
+        td.NewRow.Set(4, time.Now()) //set the 4th column to now()
+    	return td.NewRow //return the new modified row
+    }
 
-	//preparing query statement
-	stmt, err := db.Prepare("select * from test where id=$1", []string{"integer"})
-	if err != nil {
-		logger.Fatal(err)
-	}
-
-	//running statement
-	row, err := stmt.QueryRow(1)
-	if err != nil {
-		logger.Fatal(err)
-	}
-
-	//scanning result row
-	var id int
-	var txt string
-	err = row.Scan(&id, &txt)
-	if err != nil {
-		logger.Fatal(err)
-	}
-
-	//some magic with return value :)
-	var ret string
-	for i := 0; i < x; i++ {
-	    ret += t + txt
-	}
-
-	//return type must be converted to Datum
-	return ToDatum(ret)
+    //ConcatArray concatenates an array of strings
+    //function arguments (and return values) can be also array types of the golang builtin types
+    func ConcatArray(strs []string) string {
+    	return strings.Join(strs, "")
     }
     ```
 
-4. Build an shared objects file with `$ go build -v -buildmode=c-shared -o my_procedures.so my_procedures.go pl.go`
+build the PostgreSQL extension with `$ plgo [path/to/package]`
 
-5. Copy the shared objects file to PostgreSQL libdir `$ sudo cp my_procedures.so $(pg_config --pkglibdir)`
+this will create an directory named `build`, where the compiled shared object will be and also all files needed for the extension installation (like `Makefile`, `extention.sql`, ...)
 
-6. Create the procedure in PostgreSQL
-    ```sql
-    CREATE OR REPLACE FUNCTION public.my_awesome_procedure(text, integer)
-      RETURNS text AS
-    '$libdir/my_procedures', 'my_awesome_procedure'
-      LANGUAGE c IMMUTABLE STRICT;
-    ```
-
-7. Happily run the function in your queries `select my_awesome_procedure('foo', 10)`
-    output:
-    ```
-                         my_awesome_procedure                         
-    --------------------------------------------------------------
-     foomehfoomehfoomehfoomehfoomehfoomehfoomehfoomehfoomehfoomeh
-    (1 row)
-    ```
-
-
-## Triggers
-
-Triggers are also easy:
-
-```go
-//export plgo_trigger
-func plgo_trigger(fcinfo *FuncInfo) Datum {
-	//logger
-	t := log.New(&ELog{level: NOTICE}, "", log.Lshortfile|log.Ltime)
-
-	//this must be true, else the function is not called as a trigger
-	if !fcinfo.CalledAsTrigger() {
-		t.Fatal("Not called as trigger")
-	}
-
-	//use TriggerData to manipulate the Old and New row
-	triggerData := fcinfo.TriggerData()
-
-	//test if the trigger is called before update event
-	if !triggerData.FiredBefore() && !triggerData.FiredByUpdate(){
-		t.Fatal("function not called BEFORE UPDATE :-O")
-	}
-
-	//setting an timestamp collumn to the yesterdays time (it's just an example)
-	triggerData.NewRow.Set(4, time.Now().Add(-time.Hour*time.Duration(24)))
-
-	//return ToDatum(nil) //nothing changed in the row
-	//return ToDatum(triggerData.OldRow) //nothing changed in the row
-	return ToDatum(triggerData.NewRow) //the new row will be changed
-}
+go to the `build` directory and install your new extension:
+```bash
+$ cd build
+$ sudo make install
 ```
 
-you also must create the trigger function in PostgreSQL and set the trigger to an table event:
+this installs your extension to DB. You can then use this extension in db:
 
 ```sql
-CREATE OR REPLACE FUNCTION public.plgo_trigger()
-RETURNS trigger AS
-'$libdir/plgo_test', 'plgo_trigger'
-LANGUAGE c IMMUTABLE STRICT COST 1;
+CREATE EXTENSION myextention;
+```
 
-CREATE TRIGGER my_awesome_trigger
-  BEFORE UPDATE
-  ON public.test
-  FOR EACH ROW
-  EXECUTE PROCEDURE public.plgo_trigger();
+Finally you can happily run your the functions in your queries `select concatarray(array['foo','bar'])``
+
+output:
+```
+ concatarray
+-------------
+ foobar
+(1 row)
 ```
 
 ### use of goroutines
@@ -167,5 +112,4 @@ But the size of allocated stack is checked by the DB only when calling some stat
 ## todo
 
 - range type support
-- code generation tool (generating the boiler plate + installing functions to the db with `psql` ...)
 - Background Worker Processes!

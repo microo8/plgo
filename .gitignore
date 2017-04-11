@@ -25,3 +25,7 @@ _testmain.go
 *.prof
 
 *.sql
+
+Makefile
+*.control
+*.h

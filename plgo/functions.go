@@ -74,37 +74,48 @@ func NewCode(function *ast.FuncDecl) (CodeWriter, error) {
 
 func getParamList(function *ast.FuncDecl) (Params []Param, err error) {
 	for i, param := range function.Type.Params.List {
-		//TODO array types
-		switch p := param.Type.(type) {
-		case *ast.Ident:
-			for _, name := range param.Names {
-				if _, ok := datumTypes[p.Name]; !ok {
-					return nil, fmt.Errorf("Function %s, parameter position %d: type %s not supported", function.Name.Name, i, p.Name)
+		for _, paramName := range param.Names {
+			switch paramType := param.Type.(type) {
+			case *ast.Ident:
+				//built in type
+				if _, ok := datumTypes[paramType.Name]; !ok {
+					return nil, fmt.Errorf("Function %s, parameter %s: type %s not supported", function.Name.Name, paramName.Name, paramType.Name)
 				}
-				Params = append(Params, Param{Name: name.Name, Type: p.Name})
+				Params = append(Params, Param{Name: paramName.Name, Type: paramType.Name})
+			case *ast.ArrayType:
+				//built in array type
+				arrayType, ok := paramType.Elt.(*ast.Ident)
+				if !ok {
+					return nil, fmt.Errorf("Function %s, parameter %s: array type not supported", function.Name.Name, paramName.Name)
+				}
+				if _, ok := datumTypes[arrayType.Name]; !ok {
+					return nil, fmt.Errorf("Function %s, parameter %s: array type not supported", function.Name.Name, paramName.Name)
+				}
+				Params = append(Params, Param{Name: paramName.Name, Type: "[]" + arrayType.Name})
+			case *ast.StarExpr:
+				//*plgo.TriggerData
+				selector, ok := paramType.X.(*ast.SelectorExpr)
+				if !ok {
+					return nil, fmt.Errorf("Function %s, parameter %s: type not supported", function.Name.Name, paramName.Name)
+				}
+				var pkg *ast.Ident
+				pkg, ok = selector.X.(*ast.Ident)
+				if !ok {
+					return nil, fmt.Errorf("Function %s, parameter %s: type not supported", function.Name.Name, paramName.Name)
+				}
+				if pkg.Name != plgo || selector.Sel.Name != triggerData {
+					return nil, fmt.Errorf("Function %s, parameter %s: type not supported", function.Name.Name, paramName.Name)
+				}
+				if i != 0 {
+					return nil, fmt.Errorf("Function %s, parameter %s: *plgo.TriggerData type must be the first parameter", function.Name.Name, paramName.Name)
+				}
+				if len(param.Names) > 1 {
+					return nil, fmt.Errorf("Function %s, parameter %s: *plgo.TriggerData must be just one parameter", function.Name.Name, paramName.Name)
+				}
+				Params = append(Params, Param{Name: param.Names[0].Name, Type: "TriggerData"})
+			default:
+				return nil, fmt.Errorf("Function %s, parameter %s: type not supported", function.Name.Name, paramName.Name)
 			}
-		case *ast.StarExpr:
-			selector, ok := p.X.(*ast.SelectorExpr)
-			if !ok {
-				return nil, fmt.Errorf("Function %s, parameter position %d: type not supported", function.Name.Name, i)
-			}
-			var pkg *ast.Ident
-			pkg, ok = selector.X.(*ast.Ident)
-			if !ok {
-				return nil, fmt.Errorf("Function %s, parameter position %d: type not supported", function.Name.Name, i)
-			}
-			if pkg.Name != plgo || selector.Sel.Name != triggerData {
-				return nil, fmt.Errorf("Function %s, parameter position %d: type not supported", function.Name.Name, i)
-			}
-			if i != 0 {
-				return nil, fmt.Errorf("Function %s, parameter position %d: *plgo.TriggerData type must be the first parameter", function.Name.Name, i)
-			}
-			if len(param.Names) > 1 {
-				return nil, fmt.Errorf("Function %s, parameter position %d: *plgo.TriggerData must be just one parameter", function.Name.Name, i)
-			}
-			Params = append(Params, Param{Name: param.Names[0].Name, Type: "TriggerData"})
-		default:
-			return nil, fmt.Errorf("Function %s, parameter position %d: type not supported", function.Name.Name, i)
 		}
 	}
 	return
