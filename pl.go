@@ -1,4 +1,4 @@
-package main
+package plgo
 
 /*
 #cgo CFLAGS: -I/usr/include/postgresql/server
@@ -251,17 +251,19 @@ bool trigger_fired_by_truncate(TriggerEvent tg_event) {
 	return TRIGGER_FIRED_BY_TRUNCATE(tg_event);
 }
 
-#include "funcdec.h"
+//{funcdec}
 */
 import "C"
 import (
 	"errors"
 	"fmt"
+	"log"
 	"reflect"
-	"sync"
 	"time"
 	"unsafe"
 )
+
+//TODO check all public things
 
 //this has to be here
 func main() {}
@@ -269,10 +271,8 @@ func main() {}
 //Datum is the return type of postgresql
 type Datum C.Datum
 
-//DB connection
-type DB struct {
-	lock sync.Mutex
-}
+//DB represents the db connection, can be made only once
+type DB struct{}
 
 //Open returns DB connection and runs SPI_connect
 func Open() (*DB, error) {
@@ -284,73 +284,59 @@ func Open() (*DB, error) {
 
 //Close closes the DB connection
 func (db *DB) Close() error {
-	db.lock.Lock()
-	defer db.lock.Unlock()
 	if C.SPI_finish() != C.SPI_OK_FINISH {
 		return errors.New("Error closing DB")
 	}
 	return nil
 }
 
-//ELogLevel TODO
-type ELogLevel int
+//elogLevel Log level enum
+type elogLevel int
 
-//ELogLevel constants
+//elogLevel constants
 const (
-	NOTICE ELogLevel = iota
-	ERROR
+	noticeLevel elogLevel = iota
+	errorLevel
 )
 
-//ELog represents the elog io.Writter to use with Logger
-type ELog struct {
-	lock  sync.Mutex
-	Level ELogLevel
+//elog represents the elog io.Writter to use with Logger
+type elog struct {
+	Level elogLevel
 }
 
 //Write is an notify implemented as io.Writter
-func (e *ELog) Write(p []byte) (n int, err error) {
-	e._print(string(p))
+func (e *elog) Write(p []byte) (n int, err error) {
+	switch e.Level {
+	case noticeLevel:
+		C.elog_notice(C.CString(string(p)))
+	case errorLevel:
+		C.elog_error(C.CString(string(p)))
+	}
 	return len(p), nil
 }
 
-func (e *ELog) _print(str string) {
-	e.lock.Lock()
-	defer e.lock.Unlock()
-	switch e.Level {
-	case NOTICE:
-		C.elog_notice(C.CString(str))
-	case ERROR:
-		C.elog_error(C.CString(str))
-	}
+//NewNoticeLogger creates an logger that writes into NOTICE elog
+func NewNoticeLogger(prefix string, flag int) *log.Logger {
+	return log.New(&elog{Level: noticeLevel}, prefix, flag)
 }
 
-//Print writes the arguments to elog
-func (e *ELog) Print(args ...interface{}) {
-	e._print(fmt.Sprint(args...))
+//NewErrorLogger creates an logger that writes into ERROR elog
+func NewErrorLogger(prefix string, flag int) *log.Logger {
+	return log.New(&elog{Level: errorLevel}, prefix, flag)
 }
 
-//Printf writes formated arguments to elog
-func (e *ELog) Printf(format string, args ...interface{}) {
-	e._print(fmt.Sprintf(format, args...))
-}
-
-//Println writes the arguments to elog as new line
-func (e *ELog) Println(args ...interface{}) {
-	e._print(fmt.Sprintln(args...))
-}
-
-//FuncInfo is the type of parameters that all functions get
-type FuncInfo C.FunctionCallInfoData
+//funcInfo is the type of parameters that all functions get
+type funcInfo C.FunctionCallInfoData
 
 //CalledAsTrigger checks if the function is called as trigger
-func (fcinfo *FuncInfo) CalledAsTrigger() bool {
+func (fcinfo *funcInfo) CalledAsTrigger() bool {
 	return C.called_as_trigger((*C.struct_FunctionCallInfoData)(unsafe.Pointer(fcinfo))) == C.true
 }
 
 //TODO Scan must return argument also if the function is called as trigger
 
 //Scan sets the args to the function parameter values (converted from PostgreSQL types to Go types)
-func (fcinfo *FuncInfo) Scan(args ...interface{}) error {
+func (fcinfo *funcInfo) Scan(args ...interface{}) error {
 	for i, arg := range args {
 		funcArg := C.get_arg((*C.struct_FunctionCallInfoData)(unsafe.Pointer(fcinfo)), C.uint(i))
 		argOid := C.get_call_expr_argtype(fcinfo.flinfo.fn_expr, C.int(i))
@@ -363,7 +349,7 @@ func (fcinfo *FuncInfo) Scan(args ...interface{}) error {
 }
 
 //TriggerData returns Trigger data, if the function was called as trigger, else nil
-func (fcinfo *FuncInfo) TriggerData() *TriggerData {
+func (fcinfo *funcInfo) TriggerData() *TriggerData {
 	if !fcinfo.CalledAsTrigger() {
 		return nil
 	}
@@ -462,7 +448,7 @@ func (row *TriggerRow) Scan(args ...interface{}) error {
 
 //Set sets the i'th value in the row
 func (row *TriggerRow) Set(i int, val interface{}) {
-	row.attrs[i] = (C.Datum)(ToDatum(val))
+	row.attrs[i] = (C.Datum)(toDatum(val))
 }
 
 func makeArray(elemtype C.Oid, arg interface{}) Datum {
@@ -473,7 +459,7 @@ func makeArray(elemtype C.Oid, arg interface{}) Datum {
 
 	datums := make([]C.Datum, s.Len())
 	for i := 0; i < s.Len(); i++ {
-		datums[i] = (C.Datum)(ToDatum(s.Index(i).Interface()))
+		datums[i] = (C.Datum)(toDatum(s.Index(i).Interface()))
 	}
 	return (Datum)(C.array_to_datum(elemtype, &datums[0], C.int(s.Len())))
 }
@@ -486,8 +472,8 @@ func makeSlice(val C.Datum) []C.Datum {
 	return slice
 }
 
-//ToDatum returns the Postgresql C type from Golang type
-func ToDatum(val interface{}) Datum {
+//toDatum returns the Postgresql C type from Golang type
+func toDatum(val interface{}) Datum {
 	switch v := val.(type) {
 	case error:
 		return (Datum)(C.cstring_to_datum(C.CString(v.Error())))
@@ -547,7 +533,7 @@ func ToDatum(val interface{}) Datum {
 	case *TriggerRow:
 		isNull := make([]C.bool, len(v.attrs))
 		for i, attr := range v.attrs {
-			if attr == (C.Datum)(ToDatum(nil)) {
+			if attr == (C.Datum)(toDatum(nil)) {
 				isNull[i] = C.true
 			} else {
 				isNull[i] = C.false
@@ -579,8 +565,6 @@ func (db *DB) Prepare(query string, types []string) (*Stmt, error) {
 		}
 		typeIdsP = &typeIds[0]
 	}
-	db.lock.Lock()
-	defer db.lock.Unlock()
 	cplan := C.SPI_prepare(C.CString(query), C.int(len(types)), typeIdsP)
 	if cplan != nil {
 		return &Stmt{spiPlan: cplan, db: db}, nil
@@ -592,8 +576,6 @@ func (db *DB) Prepare(query string, types []string) (*Stmt, error) {
 //multiple Rows result, that can be iterated
 func (stmt *Stmt) Query(args ...interface{}) (*Rows, error) {
 	valuesP, nullsP := spiArgs(args)
-	stmt.db.lock.Lock()
-	defer stmt.db.lock.Unlock()
 	rv := C.SPI_execute_plan(stmt.spiPlan, valuesP, nullsP, C.true, 0)
 	if rv == C.SPI_OK_SELECT && C.SPI_processed > 0 {
 		return newRows(C.SPI_tuptable.vals, C.SPI_tuptable.tupdesc, C.SPI_processed), nil
@@ -604,8 +586,6 @@ func (stmt *Stmt) Query(args ...interface{}) (*Rows, error) {
 //QueryRow executes the prepared Stmt with the provided args and returns one row result
 func (stmt *Stmt) QueryRow(args ...interface{}) (*Row, error) {
 	valuesP, nullsP := spiArgs(args)
-	stmt.db.lock.Lock()
-	defer stmt.db.lock.Unlock()
 	rv := C.SPI_execute_plan(stmt.spiPlan, valuesP, nullsP, C.false, 1)
 	if rv >= C.int(0) && C.SPI_processed == 1 {
 		return &Row{
@@ -619,8 +599,6 @@ func (stmt *Stmt) QueryRow(args ...interface{}) (*Row, error) {
 //Exec executes a prepared query Stmt with no result
 func (stmt *Stmt) Exec(args ...interface{}) error {
 	valuesP, nullsP := spiArgs(args)
-	stmt.db.lock.Lock()
-	defer stmt.db.lock.Unlock()
 	rv := C.SPI_execute_plan(stmt.spiPlan, valuesP, nullsP, C.false, 0)
 	if rv >= C.int(0) && C.SPI_processed == 1 {
 		return nil
@@ -633,7 +611,7 @@ func spiArgs(args []interface{}) (valuesP *C.Datum, nullsP *C.char) {
 		values := make([]Datum, len(args))
 		nulls := make([]C.char, len(args))
 		for i, arg := range args {
-			values[i] = ToDatum(arg)
+			values[i] = toDatum(arg)
 			nulls[i] = C.char(' ')
 		}
 		valuesP = (*C.Datum)(unsafe.Pointer(&values[0]))

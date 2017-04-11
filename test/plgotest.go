@@ -1,25 +1,17 @@
 package main
 
-/*
-#cgo CFLAGS: -I/usr/include/postgresql/server
-#cgo LDFLAGS: -shared
-
-#include "postgres.h"
-#include "fmgr.h"
-*/
-import "C"
 import (
 	"log"
 	"math"
 	"sync"
 	"time"
+
+	"github.com/microo8/plgo"
 )
 
 //PLGoTest testing function
-//export PLGoTest
-func PLGoTest(fcinfo *FuncInfo) Datum {
-	elog := &ELog{Level: NOTICE}
-	t := log.New(elog, "", log.Lshortfile|log.Ltime)
+func PLGoTest() {
+	t := plgo.NewNoticeLogger("", log.Ltime|log.Lshortfile)
 
 	testConnection(t)
 	testQueryOutputText(t)
@@ -33,59 +25,15 @@ func PLGoTest(fcinfo *FuncInfo) Datum {
 	testQueryOutputArrayFloat(t)
 	testGoroutines(t)
 
-	db, _ := Open()
-	defer db.Close()
-
-	update, _ := db.Prepare("update test set txt='abc'", []string{})
-	update.Exec()
-
-	elog.Level = NOTICE
 	t.Println("TEST end")
-	return ToDatum(nil)
-}
-
-//PLGoConcat concatenates two strings
-//export PLGoConcat
-func PLGoConcat(fcinfo *FuncInfo) Datum {
-	t := log.New(&ELog{Level: NOTICE}, "", log.Lshortfile|log.Ltime)
-	var a string
-	var b string
-	t.Print("SCAAAAAN")
-	err := fcinfo.Scan(&a, &b)
-	if err != nil {
-		t.Print("fcinfo.Scan", err)
-	}
-	t.Printf("args: '%s' and '%s'", a, b)
-	return ToDatum(a + b)
-}
-
-//PLGoTrigger is an trigger test function
-//export PLGoTrigger
-func PLGoTrigger(fcinfo *FuncInfo) Datum {
-	t := log.New(&ELog{Level: NOTICE}, "", log.Lshortfile|log.Ltime)
-
-	if !fcinfo.CalledAsTrigger() {
-		t.Fatal("Not called as trigger")
-	}
-
-	triggerData := fcinfo.TriggerData()
-	if !triggerData.FiredBefore() && !triggerData.FiredByUpdate() {
-		t.Fatal("function not called BEFORE UPDATE :-O")
-	}
-
-	triggerData.NewRow.Set(4, time.Now().Add(-time.Hour*time.Duration(24)))
-
-	//return ToDatum(nil) //nothing changed in the row
-	//return ToDatum(triggerData.OldRow) //nothing changed in the row
-	return ToDatum(triggerData.NewRow) //the new row will be changed
 }
 
 func testConnection(t *log.Logger) {
-	db, err := Open()
+	db, err := plgo.Open()
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = Open()
+	_, err = plgo.Open()
 	if err == nil {
 		t.Fatal("Double openned")
 	}
@@ -113,7 +61,7 @@ func testQueryOutputText(t *log.Logger) {
 		{"select concat('foo', $1, 'bar')", []interface{}{"meh"}, "foomehbar"},
 	}
 
-	db, err := Open()
+	db, err := plgo.Open()
 	if err != nil {
 		t.Fatal("error opening", err)
 	}
@@ -168,7 +116,7 @@ func testQueryOutputInt(t *log.Logger) {
 		{"select $1 + 200", []interface{}{-100}, 100},
 	}
 
-	db, err := Open()
+	db, err := plgo.Open()
 	if err != nil {
 		t.Fatal("error opening", err)
 	}
@@ -220,7 +168,7 @@ func testQueryOutputTime(t *log.Logger) {
 		{"select '2016-01-01'::timestamp with time zone - interval '1 year'", nil, time.Date(2015, 1, 1, 0, 0, 0, 0, time.Local)},
 	}
 
-	db, err := Open()
+	db, err := plgo.Open()
 	if err != nil {
 		t.Fatal("error opening", err)
 	}
@@ -272,7 +220,7 @@ func testQueryOutputBool(t *log.Logger) {
 		{"select $1=true", []interface{}{false}, false},
 	}
 
-	db, err := Open()
+	db, err := plgo.Open()
 	if err != nil {
 		t.Fatal("error opening", err)
 	}
@@ -324,7 +272,7 @@ func testQueryOutputFloat32(t *log.Logger) {
 		{"select ($1 - 2)::real", []interface{}{float32(math.Phi)}, float32(math.Phi) - 2},
 	}
 
-	db, err := Open()
+	db, err := plgo.Open()
 	if err != nil {
 		t.Fatal("error opening", err)
 	}
@@ -376,7 +324,7 @@ func testQueryOutputFloat64(t *log.Logger) {
 		{"select pow($1,2)", []interface{}{math.Phi}, math.Pow(math.Phi, 2)},
 	}
 
-	db, err := Open()
+	db, err := plgo.Open()
 	if err != nil {
 		t.Fatal("error opening", err)
 	}
@@ -428,7 +376,7 @@ func testQueryOutputArrayText(t *log.Logger) {
 		{"select array_remove($1,'meh')", []interface{}{[]string{"meh", "foo"}}, []string{"foo"}},
 	}
 
-	db, err := Open()
+	db, err := plgo.Open()
 	if err != nil {
 		t.Fatal("error opening", err)
 	}
@@ -483,7 +431,7 @@ func testQueryOutputArrayInt(t *log.Logger) {
 		{"select array_remove($1,100)", []interface{}{[]int{12345, 100, 67890}}, []int{12345, 67890}},
 	}
 
-	db, err := Open()
+	db, err := plgo.Open()
 	if err != nil {
 		t.Fatal("error opening", err)
 	}
@@ -539,7 +487,7 @@ func testQueryOutputArrayFloat(t *log.Logger) {
 		{"select array_remove($1,100.001::double precision)", []interface{}{[]float64{12345.123123, 100.001, 67890.456456}}, []float64{12345.123123, 67890.456456}},
 	}
 
-	db, err := Open()
+	db, err := plgo.Open()
 	if err != nil {
 		t.Fatal("error opening", err)
 	}
@@ -596,7 +544,7 @@ func testGoroutines(t *log.Logger) {
 		{"select concat('foo', $1, 'bar')", []interface{}{"meh"}, "foomehbar"},
 	}
 
-	db, err := Open()
+	db, err := plgo.Open()
 	if err != nil {
 		t.Fatal("error opening", err)
 	}
