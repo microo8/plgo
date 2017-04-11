@@ -1,12 +1,6 @@
 package main
 
 const (
-	plgo        = "plgo"
-	triggerData = "TriggerData"
-	triggerRow  = "TriggerRow"
-
-	//TODO triggers (will have TriggerData arg, so must be extracted from fcinfo)
-
 	//TODO triggers
 	sql = `{{range . }}
 CREATE OR REPLACE FUNCTION {{.Schema}}.{{.Name}}({{range $funcParams}}{{.Name}} {{.Type}}, {{end}})

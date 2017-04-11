@@ -16,38 +16,9 @@ import (
 	"strings"
 )
 
-//Remover is an function that can be used like Visitor interface for ast.Walk
-type Remover struct{}
-
-//Visit removes plgo selectors and plgo import
-func (v *Remover) Visit(node ast.Node) ast.Visitor {
-	switch n := node.(type) {
-	case *ast.ImportSpec:
-		if n.Path.Value == "\"github.com/microo8/plgo\"" {
-			n.Path.Value = ""
-		}
-	case *ast.CallExpr:
-		selector, ok := n.Fun.(*ast.SelectorExpr)
-		if !ok {
-			break
-		}
-		expr, ok := selector.X.(*ast.Ident)
-		if !ok || expr.Name != plgo {
-			break
-		}
-		n.Fun = selector.Sel
-	case *ast.StarExpr:
-		sel, ok := n.X.(*ast.SelectorExpr)
-		if !ok {
-			break
-		}
-		ident, ok := sel.X.(*ast.Ident)
-		if !ok || ident.Name != plgo {
-			break
-		}
-		n.X = sel.Sel
-	}
-	return v
+//ToUnexported changes Exported function name to unexported
+func ToUnexported(name string) string {
+	return strings.ToLower(name[0:1]) + name[1:]
 }
 
 //parsePackage parses the go package and returns the FileSet and AST
@@ -84,7 +55,6 @@ func writeUserPackage(tempPackagePath string, fset *token.FileSet, packageAst *a
 
 func writeplgo(tempPackagePath string, functions []CodeWriter) error {
 	plgoPath := path.Join(os.Getenv("GOPATH"), "src", "github.com", "microo8", "plgo", "pl.go")
-	fmt.Println("plgoPath:", plgoPath)
 	if _, err := os.Stat(plgoPath); os.IsNotExist(err) {
 		return fmt.Errorf("Package github.com/microo8/plgo not installed\nplease install it with: go get -u github.com/microo8/plgo/... ")
 	}
@@ -125,12 +95,9 @@ import "C"
 		return fmt.Errorf("Cannot write file tempdir: %s", err)
 	}
 	for _, f := range functions {
-		f.Header(buf)
-		f.ParamScan(buf)
-		f.FunctionCall(buf)
-		f.Return(buf)
-		f.Footer(buf)
+		f.Code(buf)
 	}
+	//fmt.Println(buf.String())
 	code, err := format.Source(buf.Bytes())
 	if err != nil {
 		panic(err)
@@ -212,13 +179,16 @@ func main() {
 		printUsage()
 		return
 	}
+	//collect functions from the package
 	funcVisitor := new(FuncVisitor)
 	ast.Walk(funcVisitor, packageAst)
 	if funcVisitor.err != nil {
 		fmt.Println(err)
 		return
 	}
+	//remove plgo usages
 	ast.Walk(new(Remover), packageAst)
+	//write package and its wrappers in an temp dir
 	tempPackagePath, err := ioutil.TempDir("", "plgo")
 	if err != nil {
 		fmt.Println("Cannot get tempdir:", err)
@@ -229,6 +199,7 @@ func main() {
 		fmt.Println(err)
 		return
 	}
+	//build the package
 	err = buildPackage(tempPackagePath, packagePath)
 	if err != nil {
 		fmt.Println(err)
@@ -236,6 +207,7 @@ func main() {
 	}
 	switch flag.Arg(0) {
 	case "build":
+		//TODO create build dir
 		err = copyFile(
 			path.Join(tempPackagePath, path.Base(packagePath)+".so"),
 			path.Join(".", path.Base(packagePath)+".so"),
