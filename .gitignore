@@ -24,4 +24,4 @@ _testmain.go
 *.test
 *.prof
 
-plgo_test.h
+*.sql

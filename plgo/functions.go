@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/ast"
 	"io"
+	"strings"
 )
 
 const (
@@ -11,10 +12,41 @@ const (
 	triggerRow  = "TriggerRow"
 )
 
+var datumTypes = map[string]string{
+	"error":       "text",
+	"string":      "text",
+	"[]byte":      "bytea",
+	"int16":       "smallint",
+	"uint16":      "smallint",
+	"int32":       "integer",
+	"uint32":      "integer",
+	"int64":       "bigint",
+	"int":         "bigint",
+	"uint":        "bigint",
+	"float32":     "real",
+	"float64":     "double precision",
+	"time.Time":   "timestamp with timezone",
+	"bool":        "boolean",
+	"[]string":    "text[]",
+	"[]int16":     "smallint[]",
+	"[]uint16":    "smallint[]",
+	"[]int32":     "integer[]",
+	"[]uint32":    "integer[]",
+	"[]int64":     "bigint[]",
+	"[]int":       "bigint[]",
+	"[]uint":      "bigint[]",
+	"[]float32":   "real[]",
+	"[]float64":   "double precision[]",
+	"[]bool":      "boolean[]",
+	"[]time.Time": "timestamp with timezone[]",
+	"TriggerRow":  "trigger",
+}
+
 //CodeWriter is an interface of an object that can print its code
 type CodeWriter interface {
 	FuncDec() string
 	Code(w io.Writer)
+	SQL(packageName string, w io.Writer)
 }
 
 //NewCode parses the ast.FuncDecl and returns a new Function or An TriggerFunction
@@ -151,6 +183,34 @@ func (f *VoidFunction) Code(w io.Writer) {
 	w.Write([]byte("}\n"))
 }
 
+//SQL writes the SQL command that creates the function in DB
+func (f *VoidFunction) SQL(packageName string, w io.Writer) {
+	w.Write([]byte("CREATE OR REPLACE FUNCTION " + f.Name + "("))
+	var paramStrings []string
+	for _, p := range f.Params {
+		paramStrings = append(paramStrings, p.Name+" "+datumTypes[p.Type])
+	}
+	w.Write([]byte(strings.Join(paramStrings, ",")))
+	w.Write([]byte(")\n"))
+	w.Write([]byte("RETURNS VOID AS\n"))
+	w.Write([]byte("'$libdir/" + packageName + "', '" + f.Name + "'\n"))
+	w.Write([]byte("LANGUAGE c VOLATILE STRICT;\n"))
+	if f.Doc == "" {
+		w.Write([]byte("\n"))
+		return
+	}
+	f.Comment(w)
+}
+
+//Comment writes the Doc comment of the golang function as an DB comment for that function
+func (f *VoidFunction) Comment(w io.Writer) {
+	var paramTypes []string
+	for _, p := range f.Params {
+		paramTypes = append(paramTypes, datumTypes[p.Type])
+	}
+	w.Write([]byte("COMMENT ON FUNCTION " + f.Name + "(" + strings.Join(paramTypes, ",") + ") IS '" + f.Doc + "';\n\n"))
+}
+
 //Function is a list of parameters and the return type
 type Function struct {
 	VoidFunction
@@ -180,6 +240,25 @@ func (f *Function) Code(w io.Writer) {
 	w.Write([]byte("}\n"))
 }
 
+//SQL writes the SQL command that creates the function in DB
+func (f *Function) SQL(packageName string, w io.Writer) {
+	w.Write([]byte("CREATE OR REPLACE FUNCTION " + f.Name + "("))
+	var paramsString []string
+	for _, p := range f.Params {
+		paramsString = append(paramsString, p.Name+" "+datumTypes[p.Type])
+	}
+	w.Write([]byte(strings.Join(paramsString, ",")))
+	w.Write([]byte(")\n"))
+	w.Write([]byte("RETURNS " + datumTypes[f.ReturnType] + " AS\n"))
+	w.Write([]byte("'$libdir/" + packageName + "', '" + f.Name + "'\n"))
+	w.Write([]byte("LANGUAGE c VOLATILE STRICT;\n"))
+	if f.Doc == "" {
+		w.Write([]byte("\n"))
+		return
+	}
+	f.Comment(w)
+}
+
 //TriggerFunction a special type of function, it takes TriggerData as the first argument and TriggerRow as return type
 type TriggerFunction struct {
 	VoidFunction
@@ -207,4 +286,23 @@ func (f *TriggerFunction) Code(w io.Writer) {
 	w.Write([]byte(")\n"))
 	w.Write([]byte("return toDatum(ret)\n"))
 	w.Write([]byte("}\n"))
+}
+
+//SQL writes the SQL command that creates the function in DB
+func (f *TriggerFunction) SQL(packageName string, w io.Writer) {
+	w.Write([]byte("CREATE OR REPLACE FUNCTION " + f.Name + "("))
+	var paramsString []string
+	for _, p := range f.Params {
+		paramsString = append(paramsString, p.Name+" "+datumTypes[p.Type])
+	}
+	w.Write([]byte(strings.Join(paramsString, ",")))
+	w.Write([]byte(")\n"))
+	w.Write([]byte("RETURNS TRIGGER AS\n"))
+	w.Write([]byte("'$libdir/" + packageName + "', '" + f.Name + "'\n"))
+	w.Write([]byte("LANGUAGE c VOLATILE STRICT;\n"))
+	if f.Doc == "" {
+		w.Write([]byte("\n"))
+		return
+	}
+	f.Comment(w)
 }

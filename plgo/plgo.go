@@ -10,6 +10,13 @@ import (
 	"strings"
 )
 
+func printUsage() {
+	fmt.Println(`Usage:
+plgo build [path/to/package]
+or
+plgo install [path/to/package]`)
+}
+
 func copyFile(src, dst string) error {
 	in, err := os.Open(src)
 	if err != nil {
@@ -43,13 +50,6 @@ func buildPackage(buildPath, packageName string) error {
 	return nil
 }
 
-func printUsage() {
-	fmt.Println(`Usage:
-plgo build [path/to/package]
-or
-plgo install [path/to/package]`)
-}
-
 func main() {
 	flag.Parse()
 	if len(flag.Args()) == 0 || len(flag.Args()) > 2 || (flag.Arg(0) != "build" && flag.Arg(0) != "install") {
@@ -72,23 +72,29 @@ func main() {
 		fmt.Println(err)
 		return
 	}
-	absPackagePath, err := filepath.Abs(packagePath)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	packageName := filepath.Base(absPackagePath)
-	err = buildPackage(tempPackagePath, absPackagePath)
+	err = buildPackage(tempPackagePath, moduleWriter.PackageName)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
 	switch flag.Arg(0) {
 	case "build":
-		//TODO create build dir
+		err = os.Mkdir("build", 0744)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
 		err = copyFile(
-			filepath.Join(tempPackagePath, packageName+".so"),
-			filepath.Join(".", packageName+".so"),
+			filepath.Join(tempPackagePath, moduleWriter.PackageName+".so"),
+			filepath.Join("build", moduleWriter.PackageName+".so"),
+		)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		err = copyFile(
+			filepath.Join(tempPackagePath, moduleWriter.PackageName+".sql"),
+			filepath.Join("build", moduleWriter.PackageName+".sql"),
 		)
 		if err != nil {
 			fmt.Println(err)
@@ -102,13 +108,13 @@ func main() {
 		}
 		pglibdir := strings.TrimSpace(string(pglibdirBin))
 		err = copyFile(
-			filepath.Join(tempPackagePath, packageName+".so"),
-			filepath.Join(pglibdir, packageName+".so"),
+			filepath.Join(tempPackagePath, moduleWriter.PackageName+".so"),
+			filepath.Join(pglibdir, moduleWriter.PackageName+".so"),
 		)
 		if err != nil && os.IsPermission(err) {
 			cp := exec.Command("sudo", "cp",
-				filepath.Join(tempPackagePath, packageName+".so"),
-				filepath.Join(pglibdir, packageName+".so"),
+				filepath.Join(tempPackagePath, moduleWriter.PackageName+".so"),
+				filepath.Join(pglibdir, moduleWriter.PackageName+".so"),
 			)
 			cp.Stdin = os.Stdin
 			cp.Stderr = os.Stderr

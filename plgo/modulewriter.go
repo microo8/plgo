@@ -21,9 +21,10 @@ func ToUnexported(name string) string {
 
 //ModuleWriter writes the tmp module wrapper that will be build to shared object
 type ModuleWriter struct {
-	fset       *token.FileSet
-	packageAst *ast.Package
-	functions  []CodeWriter
+	PackageName string
+	fset        *token.FileSet
+	packageAst  *ast.Package
+	functions   []CodeWriter
 }
 
 //NewModuleWriter parses the go package and returns the FileSet and AST
@@ -46,7 +47,12 @@ func NewModuleWriter(packagePath string) (*ModuleWriter, error) {
 	if funcVisitor.err != nil {
 		return nil, err
 	}
-	return &ModuleWriter{fset: fset, packageAst: packageAst, functions: funcVisitor.functions}, nil
+	absPackagePath, err := filepath.Abs(packagePath)
+	if err != nil {
+		return nil, err
+	}
+	packageName := filepath.Base(absPackagePath)
+	return &ModuleWriter{PackageName: packageName, fset: fset, packageAst: packageAst, functions: funcVisitor.functions}, nil
 }
 
 //WriteModule writes the tmp module wrapper
@@ -64,6 +70,10 @@ func (mw *ModuleWriter) WriteModule() (string, error) {
 		return "", err
 	}
 	err = mw.writeExportedMethods(tempPackagePath)
+	if err != nil {
+		return "", err
+	}
+	err = mw.writeSQL(tempPackagePath)
 	if err != nil {
 		return "", err
 	}
@@ -138,6 +148,19 @@ import "C"
 	err = ioutil.WriteFile(filepath.Join(tempPackagePath, "methods.go"), code, 0644)
 	if err != nil {
 		return fmt.Errorf("Cannot write file tempdir: %s", err)
+	}
+	return nil
+}
+
+func (mw *ModuleWriter) writeSQL(tempPackagePath string) error {
+	sqlPath := filepath.Join(tempPackagePath, mw.PackageName+".sql")
+	sqlFile, err := os.Create(sqlPath)
+	defer sqlFile.Close()
+	if err != nil {
+		return err
+	}
+	for _, f := range mw.functions {
+		f.SQL(mw.PackageName, sqlFile)
 	}
 	return nil
 }
