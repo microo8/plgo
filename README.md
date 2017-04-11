@@ -26,35 +26,35 @@ import (
 
 func Meh() {
     //NoticeLogger for printing notice messages to elog
-	logger := plgo.NewErrorLogger("", log.Ltime|log.Lshortfile)
-	logger.Println("meh")
+    logger := plgo.NewErrorLogger("", log.Ltime|log.Lshortfile)
+    logger.Println("meh")
 }
 
 //ConcatAll concatenates all values of an column in a given table
 func ConcatAll(tableName, colName string) string {
     //ErrorLogger for printing error messages to elog
-	logger := plgo.NewErrorLogger("", log.Ltime|log.Lshortfile)
-	db, err := plgo.Open() //open the connection to DB
-	if err != nil {
-		logger.Fatalf("Cannot open DB: %s", err)
-	}
-	defer db.Close() //db must be closed
-	query := "select " + colName + " from " + tableName
-	stmt, err := db.Prepare(query, nil) //prepare an statement
-	if err != nil {
-		logger.Fatalf("Cannot prepare query statement (%s): %s", query, err)
-	}
-	rows, err := stmt.Query() //execute statement
-	if err != nil {
-		logger.Fatalf("Query (%s) error: %s", query, err)
-	}
-	var ret string
-	for rows.Next() { //iterate over the rows
-		var val string
-		rows.Scan(&val)
-		ret += val
-	}
-	return ret
+    logger := plgo.NewErrorLogger("", log.Ltime|log.Lshortfile)
+    db, err := plgo.Open() //open the connection to DB
+    if err != nil {
+        logger.Fatalf("Cannot open DB: %s", err)
+    }
+    defer db.Close() //db must be closed
+    query := "select " + colName + " from " + tableName
+    stmt, err := db.Prepare(query, nil) //prepare an statement
+    if err != nil {
+        logger.Fatalf("Cannot prepare query statement (%s): %s", query, err)
+    }
+    rows, err := stmt.Query() //execute statement
+    if err != nil {
+        logger.Fatalf("Query (%s) error: %s", query, err)
+    }
+    var ret string
+    for rows.Next() { //iterate over the rows
+        var val string
+        rows.Scan(&val)
+        ret += val
+    }
+    return ret
 }
 
 //CreatedTimeTrigger is an trigger function
@@ -62,13 +62,13 @@ func ConcatAll(tableName, colName string) string {
 //and must return *plgo.TriggerRow
 func CreatedTimeTrigger(td *plgo.TriggerData) *plgo.TriggerRow {
     td.NewRow.Set(4, time.Now()) //set the 4th column to now()
-	return td.NewRow //return the new modified row
+    return td.NewRow //return the new modified row
 }
 
 //ConcatArray concatenates an array of strings
 //function arguments (and return values) can be also array types of the golang builtin types
 func ConcatArray(strs []string) string {
-	return strings.Join(strs, "")
+    return strings.Join(strs, "")
 }
 ```
 
