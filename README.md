@@ -5,6 +5,10 @@ plgo is an tool for easily creating PostgreSQL extensions with stored procedures
 
 contribution of all kind welcome!
 
+## installation
+
+`go get -u github.com/microo8/plgo/...`
+
 Creating new stored procedures with plgo is easy:
 
 Create a package where your procedures will be declared:
@@ -72,9 +76,13 @@ func ConcatArray(strs []string) string {
 }
 ```
 
+## create extention
+
 build the PostgreSQL extension with `$ plgo [path/to/package]`
 
 this will create an directory named `build`, where the compiled shared object will be and also all files needed for the extension installation (like `Makefile`, `extention.sql`, ...)
+
+## install extension
 
 go to the `build` directory and install your new extension:
 
