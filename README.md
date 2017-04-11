@@ -10,67 +10,67 @@ Creating new stored procedures with plgo is easy:
 Create a package where your procedures will be declared:
 
 ```go
-    //must be main package
+//must be main package
 
-    package main
+package main
 
-    import (
-    	"log"
-    	"strings"
+import (
+	"log"
+	"strings"
 
-    	"github.com/microo8/plgo"
-    )
+	"github.com/microo8/plgo"
+)
 
-    //from every exported function will be generated a stored procedure
-    //functions can take (and return) any golang builtin type (like string, int, float64, []int, ...)
+//from every exported function will be generated a stored procedure
+//functions can take (and return) any golang builtin type (like string, int, float64, []int, ...)
 
-    func Meh() {
-        //NoticeLogger for printing notice messages to elog
-    	logger := plgo.NewErrorLogger("", log.Ltime|log.Lshortfile)
-    	logger.Println("meh")
-    }
+func Meh() {
+    //NoticeLogger for printing notice messages to elog
+	logger := plgo.NewErrorLogger("", log.Ltime|log.Lshortfile)
+	logger.Println("meh")
+}
 
-    //ConcatAll concatenates all values of an column in a given table
-    func ConcatAll(tableName, colName string) string {
-        //ErrorLogger for printing error messages to elog
-    	logger := plgo.NewErrorLogger("", log.Ltime|log.Lshortfile)
-    	db, err := plgo.Open() //open the connection to DB
-    	if err != nil {
-    		logger.Fatalf("Cannot open DB: %s", err)
-    	}
-    	defer db.Close() //db must be closed
-    	query := "select " + colName + " from " + tableName
-    	stmt, err := db.Prepare(query, nil) //prepare an statement
-    	if err != nil {
-    		logger.Fatalf("Cannot prepare query statement (%s): %s", query, err)
-    	}
-    	rows, err := stmt.Query() //execute statement
-    	if err != nil {
-    		logger.Fatalf("Query (%s) error: %s", query, err)
-    	}
-    	var ret string
-    	for rows.Next() { //iterate over the rows
-    		var val string
-    		rows.Scan(&val)
-    		ret += val
-    	}
-    	return ret
-    }
+//ConcatAll concatenates all values of an column in a given table
+func ConcatAll(tableName, colName string) string {
+    //ErrorLogger for printing error messages to elog
+	logger := plgo.NewErrorLogger("", log.Ltime|log.Lshortfile)
+	db, err := plgo.Open() //open the connection to DB
+	if err != nil {
+		logger.Fatalf("Cannot open DB: %s", err)
+	}
+	defer db.Close() //db must be closed
+	query := "select " + colName + " from " + tableName
+	stmt, err := db.Prepare(query, nil) //prepare an statement
+	if err != nil {
+		logger.Fatalf("Cannot prepare query statement (%s): %s", query, err)
+	}
+	rows, err := stmt.Query() //execute statement
+	if err != nil {
+		logger.Fatalf("Query (%s) error: %s", query, err)
+	}
+	var ret string
+	for rows.Next() { //iterate over the rows
+		var val string
+		rows.Scan(&val)
+		ret += val
+	}
+	return ret
+}
 
-    //CreatedTimeTrigger is an trigger function
-    //trigger function must have the first argument of type *plgo.TriggerData
-    //and must return *plgo.TriggerRow
-    func CreatedTimeTrigger(td *plgo.TriggerData) *plgo.TriggerRow {
-        td.NewRow.Set(4, time.Now()) //set the 4th column to now()
-    	return td.NewRow //return the new modified row
-    }
+//CreatedTimeTrigger is an trigger function
+//trigger function must have the first argument of type *plgo.TriggerData
+//and must return *plgo.TriggerRow
+func CreatedTimeTrigger(td *plgo.TriggerData) *plgo.TriggerRow {
+    td.NewRow.Set(4, time.Now()) //set the 4th column to now()
+	return td.NewRow //return the new modified row
+}
 
-    //ConcatArray concatenates an array of strings
-    //function arguments (and return values) can be also array types of the golang builtin types
-    func ConcatArray(strs []string) string {
-    	return strings.Join(strs, "")
-    }
-    ```
+//ConcatArray concatenates an array of strings
+//function arguments (and return values) can be also array types of the golang builtin types
+func ConcatArray(strs []string) string {
+	return strings.Join(strs, "")
+}
+```
 
 build the PostgreSQL extension with `$ plgo [path/to/package]`
 
