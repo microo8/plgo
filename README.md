@@ -32,7 +32,7 @@ import (
 
 func Meh() {
     //NoticeLogger for printing notice messages to elog
-    logger := plgo.NewErrorLogger("", log.Ltime|log.Lshortfile)
+    logger := plgo.NewNoticeLogger("", log.Ltime|log.Lshortfile)
     logger.Println("meh")
 }
 
