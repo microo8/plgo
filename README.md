@@ -1,7 +1,7 @@
 [![Report card](http://goreportcard.com/badge/microo8/plgo)](http://goreportcard.com/report/microo8/plgo)
 
 # plgo
-plgo is an tool for easily creating PostgreSQL extensions with stored procedures and triggers in golang.
+plgo is an tool for easily creating PostgreSQL extensions with stored procedures and triggers in golang. It creates wrapper code, PostgreSQL extension files and builds your package.
 
 contribution of all kind welcome!
 
