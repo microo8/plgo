@@ -8,7 +8,8 @@ contribution of all kind welcome!
 Creating new stored procedures with plgo is easy:
 
 Create a package where your procedures will be declared:
-    ```go
+
+```go
     //must be main package
 
     package main
@@ -76,6 +77,7 @@ build the PostgreSQL extension with `$ plgo [path/to/package]`
 this will create an directory named `build`, where the compiled shared object will be and also all files needed for the extension installation (like `Makefile`, `extention.sql`, ...)
 
 go to the `build` directory and install your new extension:
+
 ```bash
 $ cd build
 $ sudo make install
@@ -87,9 +89,10 @@ this installs your extension to DB. You can then use this extension in db:
 CREATE EXTENSION myextention;
 ```
 
-Finally you can happily run your the functions in your queries `select concatarray(array['foo','bar'])``
+Finally you can happily run your the functions in your queries `select concatarray(array['foo','bar'])`
 
 output:
+
 ```
  concatarray
 -------------
