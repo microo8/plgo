@@ -3,8 +3,6 @@
 # plgo
 plgo is an tool for easily creating PostgreSQL extensions with stored procedures and triggers in golang.
 
-(currently working on an tool that generates the boilerplate code and builds/installs the shared objects file and generates sql to create the functions in the database)
-
 contribution of all kind welcome!
 
 Creating new stored procedures with plgo is easy:
