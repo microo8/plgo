@@ -1,4 +1,5 @@
 [![Report card](http://goreportcard.com/badge/microo8/plgo)](http://goreportcard.com/report/microo8/plgo)
+[![MIT Licence](https://badges.frapsoft.com/os/mit/mit.png?v=103)](https://opensource.org/licenses/mit-license.php)
 
 # plgo
 plgo is an tool for easily creating PostgreSQL extensions with stored procedures and triggers in golang. It creates wrapper code, PostgreSQL extension files and builds your package.
