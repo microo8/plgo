@@ -7,6 +7,7 @@ import (
 	"github.com/microo8/plgo"
 )
 
+//Meh prints out message to error elog
 func Meh() {
 	logger := plgo.NewErrorLogger("", log.Ltime|log.Lshortfile)
 	logger.Println("meh")
@@ -38,6 +39,7 @@ func ConcatAll(tableName, colName string) string {
 	return ret
 }
 
+//CreatedTimeTrigger example trigger
 func CreatedTimeTrigger(td *plgo.TriggerData) *plgo.TriggerRow {
 	return nil
 }
