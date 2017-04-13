@@ -370,8 +370,6 @@ type TriggerData struct {
 	tgTrigger  *C.Trigger
 	OldRow     *TriggerRow
 	NewRow     *TriggerRow
-	//Buffer        tg_trigtuplebuf;
-	//Buffer        tg_newtuplebuf;
 }
 
 //FiredBefore returns true if the trigger fired before the operation.
@@ -665,6 +663,23 @@ func (rows *Rows) Scan(args ...interface{}) error {
 	return nil
 }
 
+//Columns returns the names of columns
+func (rows *Rows) Columns() ([]string, error) {
+	var columns []string
+	for i := 1; ; i++ {
+		fname := C.SPI_fname(rows.tupleDesc, C.int(i))
+
+		if fname == nil {
+			break
+		}
+		if C.SPI_result == C.SPI_ERROR_NOATTRIBUTE {
+			return nil, fmt.Errorf("Error getting column names")
+		}
+		columns = append(columns, C.GoString(fname))
+	}
+	return columns, nil
+}
+
 //Row represents a single row from running a query
 type Row struct {
 	tupleDesc C.TupleDesc
@@ -792,67 +807,100 @@ func scanVal(oid C.Oid, typeName string, val C.Datum, arg interface{}) error {
 		slice := makeSlice(val)
 		*targ = make([]string, len(slice))
 		for i := range slice {
-			scanVal(C.TEXTOID, "Text", slice[i], &((*targ)[i]))
+			err := scanVal(C.TEXTOID, "Text", slice[i], &((*targ)[i]))
+			if err != nil {
+				return err
+			}
 		}
 	case *[]int16:
 		slice := makeSlice(val)
 		*targ = make([]int16, len(slice))
 		for i := range slice {
-			scanVal(C.INT2OID, "SMALLINT", slice[i], &((*targ)[i]))
+			err := scanVal(C.INT2OID, "SMALLINT", slice[i], &((*targ)[i]))
+			if err != nil {
+				return err
+			}
 		}
 	case *[]uint16:
 		slice := makeSlice(val)
 		*targ = make([]uint16, len(slice))
 		for i := range slice {
-			scanVal(C.INT2OID, "SMALLINT", slice[i], &((*targ)[i]))
+			err := scanVal(C.INT2OID, "SMALLINT", slice[i], &((*targ)[i]))
+			if err != nil {
+				return err
+			}
 		}
 	case *[]int32:
 		slice := makeSlice(val)
 		*targ = make([]int32, len(slice))
 		for i := range slice {
-			scanVal(C.INT4OID, "INT", slice[i], &((*targ)[i]))
+			err := scanVal(C.INT4OID, "INT", slice[i], &((*targ)[i]))
+			if err != nil {
+				return err
+			}
 		}
 	case *[]uint32:
 		slice := makeSlice(val)
 		*targ = make([]uint32, len(slice))
 		for i := range slice {
-			scanVal(C.INT4OID, "INT", slice[i], &((*targ)[i]))
+			err := scanVal(C.INT4OID, "INT", slice[i], &((*targ)[i]))
+			if err != nil {
+				return err
+			}
 		}
 	case *[]int64:
 		slice := makeSlice(val)
 		*targ = make([]int64, len(slice))
 		for i := range slice {
-			scanVal(C.INT8OID, "INT", slice[i], &((*targ)[i]))
+			err := scanVal(C.INT8OID, "INT", slice[i], &((*targ)[i]))
+			if err != nil {
+				return err
+			}
 		}
 	case *[]int:
 		slice := makeSlice(val)
 		*targ = make([]int, len(slice))
 		for i := range slice {
-			scanVal(C.INT8OID, "INT", slice[i], &((*targ)[i]))
+			err := scanVal(C.INT8OID, "INT", slice[i], &((*targ)[i]))
+			if err != nil {
+				return err
+			}
 		}
 	case *[]bool:
 		slice := makeSlice(val)
 		*targ = make([]bool, len(slice))
 		for i := range slice {
-			scanVal(C.BOOLOID, "BOOL", slice[i], &((*targ)[i]))
+			err := scanVal(C.BOOLOID, "BOOL", slice[i], &((*targ)[i]))
+			if err != nil {
+				return err
+			}
 		}
 	case *[]float32:
 		slice := makeSlice(val)
 		*targ = make([]float32, len(slice))
 		for i := range slice {
-			scanVal(C.FLOAT4OID, "REAL", slice[i], &((*targ)[i]))
+			err := scanVal(C.FLOAT4OID, "REAL", slice[i], &((*targ)[i]))
+			if err != nil {
+				return err
+			}
 		}
 	case *[]float64:
 		slice := makeSlice(val)
 		*targ = make([]float64, len(slice))
 		for i := range slice {
-			scanVal(C.FLOAT8OID, "DOUBLE", slice[i], &((*targ)[i]))
+			err := scanVal(C.FLOAT8OID, "DOUBLE", slice[i], &((*targ)[i]))
+			if err != nil {
+				return err
+			}
 		}
 	case *[]time.Time:
 		slice := makeSlice(val)
 		*targ = make([]time.Time, len(slice))
 		for i := range slice {
-			scanVal(C.TIMESTAMPTZOID, "TIMETZ", slice[i], &((*targ)[i]))
+			err := scanVal(C.TIMESTAMPTZOID, "TIMETZ", slice[i], &((*targ)[i]))
+			if err != nil {
+				return err
+			}
 		}
 	default:
 		return fmt.Errorf("Unsupported type in Scan (%s) %s", reflect.TypeOf(arg).String(), typeName)

@@ -33,7 +33,15 @@ func ConcatAll(tableName, colName string) string {
 	var ret string
 	for rows.Next() {
 		var val string
-		rows.Scan(&val)
+		cols, err := rows.Columns()
+		if err != nil {
+			logger.Fatalln("Cannot get columns", err)
+		}
+		logger.Println(cols)
+		err = rows.Scan(&val)
+		if err != nil {
+			logger.Fatalln("Cannot scan value", err)
+		}
 		ret += val
 	}
 	return ret
