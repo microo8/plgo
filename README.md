@@ -79,7 +79,7 @@ func ConcatArray(strs []string) string {
 }
 ```
 
-## create extention
+## create extension
 
 build the PostgreSQL extension with `$ plgo [path/to/package]`
 
