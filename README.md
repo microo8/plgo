@@ -125,4 +125,5 @@ But the size of allocated stack is checked by the DB only when calling some stat
 
 ## todo
 
+- Own type definition!
 - Background Worker Processes!
