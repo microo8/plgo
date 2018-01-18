@@ -9,7 +9,7 @@ contribution of all kind welcome!
 
 ## installation
 
-`go get -u github.com/microo8/plgo/...`
+`go get -u github.com/microo8/plgo/plgo`
 
 ## write functions
 
