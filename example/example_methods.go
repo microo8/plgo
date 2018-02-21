@@ -49,7 +49,7 @@ func ConcatAll(tableName, colName string) string {
 
 //CreatedTimeTrigger example trigger
 func CreatedTimeTrigger(td *plgo.TriggerData) *plgo.TriggerRow {
-	return nil
+	return td.NewRow
 }
 
 //ConcatArray concatenates an array of strings

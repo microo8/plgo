@@ -353,14 +353,23 @@ func (fcinfo *funcInfo) TriggerData() *TriggerData {
 	if !fcinfo.CalledAsTrigger() {
 		return nil
 	}
-	trigdata := (*C.TriggerData)(unsafe.Pointer(fcinfo.context))
-	return &TriggerData{
-		tgEvent:    trigdata.tg_event,
-		tgRelation: trigdata.tg_relation,
-		tgTrigger:  trigdata.tg_trigger,
-		OldRow:     newTriggerRow(trigdata.tg_relation.rd_att, trigdata.tg_trigtuple),
-		NewRow:     newTriggerRow(trigdata.tg_relation.rd_att, trigdata.tg_newtuple),
+	cTriggerData := (*C.TriggerData)(unsafe.Pointer(fcinfo.context))
+	triggerData := &TriggerData{
+		tgEvent:    cTriggerData.tg_event,
+		tgRelation: cTriggerData.tg_relation,
+		tgTrigger:  cTriggerData.tg_trigger,
 	}
+	if triggerData.FiredByInsert() {
+		triggerData.OldRow = nil
+		triggerData.NewRow = newTriggerRow(cTriggerData.tg_relation.rd_att, cTriggerData.tg_trigtuple)
+	} else if triggerData.FiredByDelete() {
+		triggerData.OldRow = newTriggerRow(cTriggerData.tg_relation.rd_att, cTriggerData.tg_trigtuple)
+		triggerData.NewRow = nil
+	} else if triggerData.FiredByUpdate() {
+		triggerData.OldRow = newTriggerRow(cTriggerData.tg_relation.rd_att, cTriggerData.tg_trigtuple)
+		triggerData.NewRow = newTriggerRow(cTriggerData.tg_relation.rd_att, cTriggerData.tg_newtuple)
+	}
+	return triggerData
 }
 
 //TriggerData represents the data passed by the trigger manager
@@ -425,6 +434,9 @@ type TriggerRow struct {
 
 func newTriggerRow(tupleDesc C.TupleDesc, heapTuple C.HeapTuple) *TriggerRow {
 	row := &TriggerRow{tupleDesc, make([]C.Datum, int(tupleDesc.natts))}
+	if heapTuple == nil {
+		return nil
+	}
 	for i := 0; i < int(tupleDesc.natts); i++ {
 		row.attrs[i] = C.get_heap_getattr(heapTuple, C.uint(i+1), tupleDesc)
 	}
@@ -529,6 +541,9 @@ func toDatum(val interface{}) Datum {
 	case []time.Time:
 		return makeArray(C.TIMESTAMPTZOID, v)
 	case *TriggerRow:
+		if v == nil {
+			return toDatum(nil)
+		}
 		isNull := make([]C.bool, len(v.attrs))
 		for i, attr := range v.attrs {
 			if attr == (C.Datum)(toDatum(nil)) {

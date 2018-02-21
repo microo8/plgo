@@ -13,6 +13,9 @@ func printUsage() {
 }
 
 func buildPackage(buildPath, packageName string) error {
+	if err := os.Setenv("CGO_LDFLAGS_ALLOW", "-shared"); err != nil {
+		return err
+	}
 	goBuild := exec.Command("go", "build", "-buildmode=c-shared",
 		"-o", filepath.Join("build", packageName+".so"),
 		filepath.Join(buildPath, "package.go"),
@@ -21,8 +24,7 @@ func buildPackage(buildPath, packageName string) error {
 	)
 	goBuild.Stdout = os.Stdout
 	goBuild.Stderr = os.Stderr
-	err := goBuild.Run()
-	if err != nil {
+	if err := goBuild.Run(); err != nil {
 		return fmt.Errorf("Cannot build package: %s", err)
 	}
 	return nil
