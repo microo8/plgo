@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"math"
 	"sync"
@@ -12,6 +13,7 @@ import (
 //PLGoTest testing function
 func PLGoTest() {
 	t := plgo.NewNoticeLogger("", log.Ltime|log.Lshortfile)
+	defer t.Println("TEST end")
 
 	testConnection(t)
 	testQueryOutputText(t)
@@ -23,9 +25,8 @@ func PLGoTest() {
 	testQueryOutputArrayText(t)
 	testQueryOutputArrayInt(t)
 	testQueryOutputArrayFloat(t)
+	testJSON(t)
 	testGoroutines(t)
-
-	t.Println("TEST end")
 }
 
 func testConnection(t *log.Logger) {
@@ -35,7 +36,7 @@ func testConnection(t *log.Logger) {
 	}
 	_, err = plgo.Open()
 	if err == nil {
-		t.Fatal("Double openned")
+		t.Println("Double openned")
 	}
 	err = db.Close()
 	if err != nil {
@@ -43,7 +44,7 @@ func testConnection(t *log.Logger) {
 	}
 	err = db.Close()
 	if err == nil {
-		t.Fatal("Double closed")
+		t.Println("Double closed")
 	}
 }
 
@@ -552,7 +553,7 @@ func testGoroutines(t *log.Logger) {
 
 	var wg sync.WaitGroup
 
-	for i, test := range tests {
+	for _, test := range tests {
 
 		var args []string
 		if len(test.args) > 0 {
@@ -561,26 +562,19 @@ func testGoroutines(t *log.Logger) {
 				args[i] = "text"
 			}
 		}
-		t.Println(i, "Prepare1", test)
 		stmt, err := db.Prepare(test.query, args)
-		t.Println(i, "Prepare2", test)
 		if err != nil {
 			t.Fatal("prepare", err)
 		}
-		t.Println(i, "Prepare3", test)
 		if stmt == nil {
 			t.Fatal("plan is nil!")
 		}
-		t.Println(i, "Prepare4", test)
 
 		wg.Add(1)
-		i := i
 		test := test
 		go func() {
-			t.Println("goroutine", i)
 			defer wg.Done()
 			time.Sleep(time.Second)
-			t.Println("query", i)
 			rows, err := stmt.Query(test.args...)
 			if err != nil {
 				t.Fatal("Query ", err)
@@ -599,4 +593,109 @@ func testGoroutines(t *log.Logger) {
 	}
 
 	wg.Wait()
+}
+
+type exampleStruct struct {
+	Val1 int    `json:"val1"`
+	Val2 string `json:"val2"`
+}
+
+func initJSONTable(db *plgo.DB) error {
+	drop, err := db.Prepare("drop table if exists example", nil)
+	if err != nil {
+		return fmt.Errorf("prepare %s", err)
+	}
+	if err = drop.Exec(); err != nil {
+		return fmt.Errorf("cannot drop table %s", err)
+	}
+	create, err := db.Prepare("create table example (id serial primary key, jsonval json, jsonbval jsonb)", nil)
+	if err != nil {
+		return fmt.Errorf("prepare %s", err)
+	}
+	if err = create.Exec(); err != nil {
+		return fmt.Errorf("cannot create table %s", err)
+	}
+	insert, err := db.Prepare(`insert into example (jsonval, jsonbval) values ('{"val1":1,"val2":"foo"}','{"val1":1,"val2":"foo"}')`, nil)
+	if err != nil {
+		return fmt.Errorf("prepare %s", err)
+	}
+	if err = insert.Exec(); err != nil {
+		return fmt.Errorf("cannot insert into table %s", err)
+	}
+	return nil
+}
+
+func testJSON(t *log.Logger) {
+	db, err := plgo.Open()
+	if err != nil {
+		t.Fatal("error opening", err)
+	}
+	defer db.Close()
+	if err = initJSONTable(db); err != nil {
+		t.Fatal(err)
+	}
+
+	stmt, err := db.Prepare("select jsonval from example limit 1", nil)
+	if err != nil {
+		t.Fatal("prepare", err)
+	}
+	row, err := stmt.QueryRow()
+	if err != nil {
+		t.Fatal("query ", err)
+	}
+	var e exampleStruct
+	if err = row.Scan(&e); err != nil {
+		t.Fatal("json scan", err)
+	}
+	if e.Val1 != 1 || e.Val2 != "foo" {
+		t.Fatalln("not correctly loaded json val", e)
+	}
+
+	stmt, err = db.Prepare("select jsonbval from example limit 1", nil)
+	if err != nil {
+		t.Fatal("prepare", err)
+	}
+	row, err = stmt.QueryRow()
+	if err != nil {
+		t.Fatal("query ", err)
+	}
+	var eb exampleStruct
+	if err = row.Scan(&eb); err != nil {
+		t.Fatal("json scan", err)
+	}
+	if eb.Val1 != 1 || eb.Val2 != "foo" {
+		t.Fatalln("not correctly loaded json val", e)
+	}
+
+	insert, err := db.Prepare(`insert into example (id, jsonval, jsonbval) values (100, $1,$2)`, []string{"json", "jsonb"})
+	if err != nil {
+		t.Fatal("prepare", err)
+	}
+	e.Val1 = 2
+	e.Val2 = "bar"
+	eb.Val1 = 2
+	eb.Val2 = "bar"
+	if err = insert.Exec(e, eb); err != nil {
+		t.Fatal("cannot insert into table", err)
+	}
+
+	stmt, err = db.Prepare("select jsonval, jsonbval from example where id=100", nil)
+	if err != nil {
+		t.Fatal("prepare", err)
+	}
+	row, err = stmt.QueryRow()
+	if err != nil {
+		t.Fatal("query ", err)
+	}
+	var es, esb exampleStruct
+	err = row.Scan(&es, &esb)
+	if err != nil {
+		t.Fatal("json scan", err)
+	}
+	if es.Val1 != 2 || es.Val2 != "bar" {
+		t.Fatalln("not correctly loaded json val", e)
+	}
+	if esb.Val1 != 2 || esb.Val2 != "bar" {
+		t.Fatalln("not correctly loaded json val", e)
+	}
 }

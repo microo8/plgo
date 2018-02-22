@@ -19,6 +19,7 @@ package plgo
 #include "commands/trigger.h"
 #include "utils/rel.h"
 #include "utils/lsyscache.h"
+#include "utils/jsonb.h"
 
 #ifdef PG_MODULE_MAGIC
 PG_MODULE_MAGIC;
@@ -140,6 +141,10 @@ Datum array_to_datum(Oid element_type, Datum* vals, int size) {
     PG_RETURN_ARRAYTYPE_P(result);
 }
 
+Datum jsonb_to_datum(char* val) {
+	return (Datum) DatumGetJsonb(DirectFunctionCall1(jsonb_in, (Datum) (char *) val));
+}
+
 //Datum to val //////////////////////////////////////////////////////////
 char* datum_to_cstring(Datum val) {
     return DatumGetCString(text_to_cstring((struct varlena *)val));
@@ -214,6 +219,11 @@ char* unknown_to_char(Datum val) {
 	return (char*)val;
 }
 
+char* datum_to_jsonb_cstring(Datum val) {
+	Jsonb *jsonb = DatumGetJsonb(val);
+	return JsonbToCString(NULL, &jsonb->root, VARSIZE(jsonb));
+}
+
 //TriggerData functions/////////////////////////////////////////////
 bool trigger_fired_before(TriggerEvent tg_event) {
 	return TRIGGER_FIRED_BEFORE(tg_event);
@@ -255,6 +265,7 @@ bool trigger_fired_by_truncate(TriggerEvent tg_event) {
 */
 import "C"
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -563,15 +574,17 @@ func toDatum(val interface{}) Datum {
 type Stmt struct {
 	spiPlan C.SPIPlanPtr
 	db      *DB
+	typeIds []C.Oid
 }
 
 //Prepare prepares an SQL query and returns a Stmt that can be executed
 //query - the SQL query
 //types - an array of strings with type names from postgresql of the prepared query
 func (db *DB) Prepare(query string, types []string) (*Stmt, error) {
+	var typeIds []C.Oid
 	var typeIdsP *C.Oid
 	if len(types) > 0 {
-		typeIds := make([]C.Oid, len(types))
+		typeIds = make([]C.Oid, len(types))
 		var typmod C.int32
 		for i, t := range types {
 			C.parseTypeString(C.CString(t), &typeIds[i], &typmod, C.false)
@@ -580,7 +593,7 @@ func (db *DB) Prepare(query string, types []string) (*Stmt, error) {
 	}
 	cplan := C.SPI_prepare(C.CString(query), C.int(len(types)), typeIdsP)
 	if cplan != nil {
-		return &Stmt{spiPlan: cplan, db: db}, nil
+		return &Stmt{spiPlan: cplan, db: db, typeIds: typeIds}, nil
 	}
 	return nil, fmt.Errorf("Prepare failed: %s", C.GoString(C.SPI_result_code_string(C.SPI_result)))
 }
@@ -588,7 +601,10 @@ func (db *DB) Prepare(query string, types []string) (*Stmt, error) {
 //Query executes the prepared Stmt with the provided args and returns
 //multiple Rows result, that can be iterated
 func (stmt *Stmt) Query(args ...interface{}) (*Rows, error) {
-	valuesP, nullsP := spiArgs(args)
+	valuesP, nullsP, err := stmt.spiArgs(args)
+	if err != nil {
+		return nil, err
+	}
 	rv := C.SPI_execute_plan(stmt.spiPlan, valuesP, nullsP, C.true, 0)
 	if rv == C.SPI_OK_SELECT && C.SPI_processed > 0 {
 		return newRows(C.SPI_tuptable.vals, C.SPI_tuptable.tupdesc, C.uint64(C.SPI_processed)), nil
@@ -598,7 +614,10 @@ func (stmt *Stmt) Query(args ...interface{}) (*Rows, error) {
 
 //QueryRow executes the prepared Stmt with the provided args and returns one row result
 func (stmt *Stmt) QueryRow(args ...interface{}) (*Row, error) {
-	valuesP, nullsP := spiArgs(args)
+	valuesP, nullsP, err := stmt.spiArgs(args)
+	if err != nil {
+		return nil, err
+	}
 	rv := C.SPI_execute_plan(stmt.spiPlan, valuesP, nullsP, C.false, 1)
 	if rv >= C.int(0) && C.SPI_processed == 1 {
 		return &Row{
@@ -611,26 +630,47 @@ func (stmt *Stmt) QueryRow(args ...interface{}) (*Row, error) {
 
 //Exec executes a prepared query Stmt with no result
 func (stmt *Stmt) Exec(args ...interface{}) error {
-	valuesP, nullsP := spiArgs(args)
+	valuesP, nullsP, err := stmt.spiArgs(args)
+	if err != nil {
+		return err
+	}
 	rv := C.SPI_execute_plan(stmt.spiPlan, valuesP, nullsP, C.false, 0)
-	if rv >= C.int(0) && C.SPI_processed == 1 {
+	if rv >= C.int(0) && C.SPI_processed == 0 {
+		return nil
+	}
+	if rv == C.SPI_OK_INSERT {
 		return nil
 	}
 	return fmt.Errorf("Exec failed: %s", C.GoString(C.SPI_result_code_string(C.SPI_result)))
 }
 
-func spiArgs(args []interface{}) (valuesP *C.Datum, nullsP *C.char) {
-	if len(args) > 0 {
-		values := make([]Datum, len(args))
-		nulls := make([]C.char, len(args))
-		for i, arg := range args {
-			values[i] = toDatum(arg)
-			nulls[i] = C.char(' ')
-		}
-		valuesP = (*C.Datum)(unsafe.Pointer(&values[0]))
-		nullsP = &nulls[0]
+func (stmt *Stmt) spiArgs(args []interface{}) (valuesP *C.Datum, nullsP *C.char, err error) {
+	if len(args) == 0 {
+		return
 	}
-	return valuesP, nullsP
+	values := make([]Datum, len(args))
+	nulls := make([]C.char, len(args))
+	for i, arg := range args {
+		if stmt.typeIds[i] == C.JSONBOID {
+			jsonData, err := json.Marshal(arg)
+			if err != nil {
+				return nil, nil, err
+			}
+			values[i] = (Datum)(C.jsonb_to_datum(C.CString(string(jsonData))))
+		} else if stmt.typeIds[i] == C.JSONOID {
+			jsonData, err := json.Marshal(arg)
+			if err != nil {
+				return nil, nil, err
+			}
+			values[i] = toDatum(string(jsonData))
+		} else {
+			values[i] = toDatum(arg)
+		}
+		nulls[i] = C.char(' ')
+	}
+	valuesP = (*C.Datum)(unsafe.Pointer(&values[0]))
+	nullsP = &nulls[0]
+	return
 }
 
 //Rows represents the result of running a prepared Stmt with Query
@@ -918,6 +958,20 @@ func scanVal(oid C.Oid, typeName string, val C.Datum, arg interface{}) error {
 			}
 		}
 	default:
+		if oid == C.JSONBOID {
+			jsonData := []byte(C.GoString(C.datum_to_jsonb_cstring(val)))
+			if err := json.Unmarshal(jsonData, arg); err != nil {
+				return err
+			}
+			return nil
+		}
+		if oid == C.JSONOID {
+			jsonData := []byte(C.GoString(C.datum_to_cstring(val)))
+			if err := json.Unmarshal(jsonData, arg); err != nil {
+				return err
+			}
+			return nil
+		}
 		return fmt.Errorf("Unsupported type in Scan (%s) %s", reflect.TypeOf(arg).String(), typeName)
 	}
 	return nil

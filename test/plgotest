@@ -1,0 +1,8 @@
+#!/usr/bin/bash
+
+rm -rf build
+plgo
+cd build
+sudo make install
+cd ..
+psql -U root -d postgres -c "select plgotest()"
