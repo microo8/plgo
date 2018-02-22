@@ -26,7 +26,7 @@ func PLGoTest() {
 	testQueryOutputArrayInt(t)
 	testQueryOutputArrayFloat(t)
 	testJSON(t)
-	testGoroutines(t)
+	//testGoroutines(t)
 }
 
 func testConnection(t *log.Logger) {
@@ -34,17 +34,13 @@ func testConnection(t *log.Logger) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = plgo.Open()
-	if err == nil {
-		t.Println("Double openned")
-	}
 	err = db.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
 	err = db.Close()
 	if err == nil {
-		t.Println("Double closed")
+		t.Fatal("Double closed")
 	}
 }
 
@@ -157,8 +153,7 @@ func testQueryOutputInt(t *log.Logger) {
 }
 
 func testQueryOutputTime(t *log.Logger) {
-	n := time.Now()
-	n = n.Add(time.Nanosecond * time.Duration(-n.Nanosecond()))
+	n := time.Now().Round(time.Second)
 	var tests = []struct {
 		query  string
 		args   []interface{}

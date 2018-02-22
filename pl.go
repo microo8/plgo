@@ -651,19 +651,20 @@ func (stmt *Stmt) spiArgs(args []interface{}) (valuesP *C.Datum, nullsP *C.char,
 	values := make([]Datum, len(args))
 	nulls := make([]C.char, len(args))
 	for i, arg := range args {
-		if stmt.typeIds[i] == C.JSONBOID {
+		switch stmt.typeIds[i] {
+		case C.JSONBOID:
 			jsonData, err := json.Marshal(arg)
 			if err != nil {
 				return nil, nil, err
 			}
 			values[i] = (Datum)(C.jsonb_to_datum(C.CString(string(jsonData))))
-		} else if stmt.typeIds[i] == C.JSONOID {
+		case C.JSONOID:
 			jsonData, err := json.Marshal(arg)
 			if err != nil {
 				return nil, nil, err
 			}
 			values[i] = toDatum(string(jsonData))
-		} else {
+		default:
 			values[i] = toDatum(arg)
 		}
 		nulls[i] = C.char(' ')
@@ -958,21 +959,16 @@ func scanVal(oid C.Oid, typeName string, val C.Datum, arg interface{}) error {
 			}
 		}
 	default:
-		if oid == C.JSONBOID {
+		switch oid {
+		case C.JSONBOID:
 			jsonData := []byte(C.GoString(C.datum_to_jsonb_cstring(val)))
-			if err := json.Unmarshal(jsonData, arg); err != nil {
-				return err
-			}
-			return nil
-		}
-		if oid == C.JSONOID {
+			return json.Unmarshal(jsonData, arg)
+		case C.JSONOID:
 			jsonData := []byte(C.GoString(C.datum_to_cstring(val)))
-			if err := json.Unmarshal(jsonData, arg); err != nil {
-				return err
-			}
-			return nil
+			return json.Unmarshal(jsonData, arg)
+		default:
+			return fmt.Errorf("Unsupported type in Scan (%T) %s", arg, typeName)
 		}
-		return fmt.Errorf("Unsupported type in Scan (%s) %s", reflect.TypeOf(arg).String(), typeName)
 	}
 	return nil
 }

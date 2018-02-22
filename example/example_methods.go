@@ -49,6 +49,11 @@ func ConcatAll(tableName, colName string) string {
 
 //CreatedTimeTrigger example trigger
 func CreatedTimeTrigger(td *plgo.TriggerData) *plgo.TriggerRow {
+	var id int
+	var value string
+	td.NewRow.Scan(&id, &value)
+	td.NewRow.Set(0, id+10)
+	td.NewRow.Set(1, value+value)
 	return td.NewRow
 }
 

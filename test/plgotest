@@ -3,6 +3,6 @@
 rm -rf build
 plgo
 cd build
-sudo make install
+sudo make install &> /dev/null
 cd ..
 psql -U root -d postgres -c "select plgotest()"
