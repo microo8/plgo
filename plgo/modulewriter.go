@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"go/ast"
+	"go/build"
 	"go/format"
 	"go/parser"
 	"go/token"
@@ -98,14 +99,28 @@ func (mw *ModuleWriter) writeUserPackage(tempPackagePath string) error {
 	return nil
 }
 
-func (mw *ModuleWriter) writeplgo(tempPackagePath string) error {
-	plgoPath := filepath.Join(os.Getenv("GOPATH"), "src", "github.com", "microo8", "plgo", "pl.go")
-	if _, err := os.Stat(plgoPath); os.IsNotExist(err) {
-		return fmt.Errorf("Package github.com/microo8/plgo not installed\nplease install it with: go get -u github.com/microo8/plgo/... ")
+func readPlGoSource() ([]byte, error) {
+	goPath := os.Getenv("GOPATH")
+	if goPath == "" {
+		goPath = build.Default.GOPATH // Go 1.8 and later have a default GOPATH
 	}
-	plgoSourceBin, err := ioutil.ReadFile(plgoPath)
+	for _, goPathElement := range filepath.SplitList(goPath) {
+		rv, err := ioutil.ReadFile(filepath.Join(goPathElement, "src", "github.com", "microo8", "plgo", "pl.go"))
+		if err == nil {
+			return rv, nil
+		} else if os.IsNotExist(err) {
+			continue // try the next
+		} else {
+			return nil, fmt.Errorf("Cannot read plgo package: %s", err)
+		}
+	}
+	return nil, fmt.Errorf("Package github.com/microo8/plgo not installed\nplease install it with: go get -u github.com/microo8/plgo/plgo")
+}
+
+func (mw *ModuleWriter) writeplgo(tempPackagePath string) error {
+	plgoSourceBin, err := readPlGoSource()
 	if err != nil {
-		return fmt.Errorf("Cannot read plgo package: %s", err)
+		return err
 	}
 	plgoSource := string(plgoSourceBin)
 	plgoSource = "package main\n\n" + plgoSource[12:]
