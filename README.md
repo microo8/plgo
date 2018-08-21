@@ -6,7 +6,7 @@ plgo is an tool for easily creating PostgreSQL extensions with stored procedures
 
 contribution of all kind welcome!
 
-## Prerequisites
+## Prerequisites for Linux
 
 `sudo apt-get install postgresql-server-dev-X.Y  #Replace X.Y with your version of Postgres`
 
