@@ -150,6 +150,12 @@ func getReturnType(functionName string, results *ast.FieldList) (string, error) 
 			return "", fmt.Errorf("Function %s has not suported return type", functionName)
 		}
 		return res.Name, nil
+	case *ast.ArrayType:
+		ident, ok := res.Elt.(*ast.Ident)
+		if !ok {
+			return "", fmt.Errorf("Function %s has not supported return type", functionName)
+		}
+		return "[]" + ident.Name, nil
 	default:
 		return "", fmt.Errorf("Function %s has not suported return type", functionName)
 	}
@@ -260,7 +266,11 @@ func (f *Function) SQL(packageName string, w io.Writer) {
 	}
 	w.Write([]byte(strings.Join(paramsString, ",")))
 	w.Write([]byte(")\n"))
-	w.Write([]byte("RETURNS " + datumTypes[f.ReturnType] + " AS\n"))
+	if f.ReturnType[:2] == "[]" {
+		w.Write([]byte("RETURNS " + datumTypes[f.ReturnType[2:len(f.ReturnType)]] + "[] AS\n"))
+	} else {
+		w.Write([]byte("RETURNS " + datumTypes[f.ReturnType] + " AS\n"))
+	}
 	w.Write([]byte("'$libdir/" + packageName + "', '" + f.Name + "'\n"))
 	w.Write([]byte("LANGUAGE c VOLATILE STRICT;\n"))
 	if f.Doc == "" {
