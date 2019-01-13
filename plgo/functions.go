@@ -88,7 +88,7 @@ func getParamList(function *ast.FuncDecl) (Params []Param, err error) {
 				if !ok {
 					return nil, fmt.Errorf("Function %s, parameter %s: array type not supported", function.Name.Name, paramName.Name)
 				}
-				if _, ok := datumTypes[arrayType.Name]; !ok {
+				if _, ok := datumTypes["[]"+arrayType.Name]; !ok {
 					return nil, fmt.Errorf("Function %s, parameter %s: array type not supported", function.Name.Name, paramName.Name)
 				}
 				Params = append(Params, Param{Name: paramName.Name, Type: "[]" + arrayType.Name})
@@ -241,11 +241,18 @@ func (f *Function) Code(w io.Writer) {
 		for _, p := range f.Params {
 			w.Write([]byte("var " + p.Name + " " + p.Type + "\n"))
 		}
-		w.Write([]byte("fcinfo.Scan(\n"))
+		w.Write([]byte("err:=fcinfo.Scan(\n"))
 		for _, p := range f.Params {
 			w.Write([]byte("&" + p.Name + ",\n"))
 		}
 		w.Write([]byte(")\n"))
+		w.Write([]byte(`
+		if(err!=nil){
+			C.elog_error(C.CString(
+				err.Error(),
+			))
+			}
+			`))
 	}
 	w.Write([]byte("ret := "))
 	w.Write([]byte(ToUnexported(f.Name) + "(\n"))

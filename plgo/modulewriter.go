@@ -147,7 +147,9 @@ func (mw *ModuleWriter) writeExportedMethods(tempPackagePath string) error {
 
 /*
 #include "postgres.h"
+#include "utils/elog.h"
 #include "fmgr.h"
+extern void elog_error(char* string);
 */
 import "C"
 `)
