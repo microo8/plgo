@@ -29,6 +29,10 @@ int varsize(void *var) {
     return VARSIZE(var);
 }
 
+int varsize_any(void *var) {
+    return VARSIZE_ANY_EXHDR(var);
+}
+
 void elog_notice(char* string) {
     elog(NOTICE, string, "");
 }
@@ -149,6 +153,15 @@ Datum jsonb_to_datum(char* val) {
 char* datum_to_cstring(Datum val) {
     return DatumGetCString(text_to_cstring((struct varlena *)val));
 }
+
+bytea* datum_to_byteap(Datum val) {
+    return DatumGetByteaPP((struct varlena *)val);
+}
+
+unsigned char * bytea_to_chars(bytea* val) {
+    return  ((unsigned char *)VARDATA_ANY(val));
+}
+
 
 int16 datum_to_int16(Datum val) {
     return DatumGetInt16(val);
@@ -844,6 +857,15 @@ func scanVal(oid C.Oid, typeName string, val C.Datum, arg interface{}) error {
 			*targ = float64(C.datum_to_float8(val))
 		default:
 			return fmt.Errorf("Column type is not double precision %s", typeName)
+		}
+	case *[]uint8:
+		switch oid {
+		case C.BYTEAOID:
+			bytea := C.datum_to_byteap(val)
+			byteaPointer := unsafe.Pointer(bytea)
+			*targ = C.GoBytes(unsafe.Pointer(C.bytea_to_chars(bytea)), C.varsize_any(byteaPointer))
+		default:
+			return fmt.Errorf("Column type is not byte array %s", typeName)
 		}
 	case *time.Time:
 		switch oid {
