@@ -55,7 +55,7 @@ func NewCode(function *ast.FuncDecl) (CodeWriter, error) {
 	if err != nil {
 		return nil, err
 	}
-	returnType, err := getReturnType(function.Name.Name, function.Type.Results)
+	returnType, isStar, err := getReturnType(function.Name.Name, function.Type.Results)
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +69,7 @@ func NewCode(function *ast.FuncDecl) (CodeWriter, error) {
 	if returnType == "" {
 		return &VoidFunction{Name: function.Name.Name, Params: params, Doc: function.Doc.Text()}, nil
 	}
-	return &Function{VoidFunction: VoidFunction{Name: function.Name.Name, Params: params, Doc: function.Doc.Text()}, ReturnType: returnType}, nil
+	return &Function{VoidFunction: VoidFunction{Name: function.Name.Name, Params: params, Doc: function.Doc.Text()}, ReturnType: returnType, IsStar: isStar}, nil
 }
 
 func getParamList(function *ast.FuncDecl) (Params []Param, err error) {
@@ -121,43 +121,50 @@ func getParamList(function *ast.FuncDecl) (Params []Param, err error) {
 	return
 }
 
-func getReturnType(functionName string, results *ast.FieldList) (string, error) {
+func getReturnType(functionName string, results *ast.FieldList) (string, bool, error) {
 	//Result is void
 	if results == nil {
-		return "", nil
+		return "", false, nil
 	}
 	if len(results.List) > 1 {
-		return "", fmt.Errorf("Function %s has multiple return types", functionName)
+		return "", false, fmt.Errorf("Function %s has multiple return types", functionName)
 	}
 	switch res := results.List[0].Type.(type) {
 	case *ast.StarExpr:
 		var selector *ast.SelectorExpr
-		selector, ok := res.X.(*ast.SelectorExpr)
+		ident, ok := res.X.(*ast.Ident)
+		if ok {
+			if _, ok := datumTypes[ident.Name]; !ok {
+				return "", false, fmt.Errorf("Function %s has not suported return type", functionName)
+			}
+			return ident.Name, true, nil
+		}
+		selector, ok = res.X.(*ast.SelectorExpr)
 		if !ok {
-			return "", fmt.Errorf("Function %s has not supported return type", functionName)
+			return "", false, fmt.Errorf("Function %s has not supported return type", functionName)
 		}
 		var pkg *ast.Ident
 		pkg, ok = selector.X.(*ast.Ident)
 		if !ok {
-			return "", fmt.Errorf("Function %s has not supported return type", functionName)
+			return "", false, fmt.Errorf("Function %s has not supported return type", functionName)
 		}
 		if pkg.Name != plgo || selector.Sel.Name != triggerRow {
-			return "", fmt.Errorf("Function %s has not supported return type", functionName)
+			return "", false, fmt.Errorf("Function %s has not supported return type", functionName)
 		}
-		return "TriggerRow", nil
+		return "TriggerRow", false, nil
 	case *ast.Ident:
 		if _, ok := datumTypes[res.Name]; !ok {
-			return "", fmt.Errorf("Function %s has not suported return type", functionName)
+			return "", false, fmt.Errorf("Function %s has not suported return type", functionName)
 		}
-		return res.Name, nil
+		return res.Name, false, nil
 	case *ast.ArrayType:
 		ident, ok := res.Elt.(*ast.Ident)
 		if !ok {
-			return "", fmt.Errorf("Function %s has not supported return type", functionName)
+			return "", false, fmt.Errorf("Function %s has not supported return type", functionName)
 		}
-		return "[]" + ident.Name, nil
+		return "[]" + ident.Name, false, nil
 	default:
-		return "", fmt.Errorf("Function %s has not suported return type", functionName)
+		return "", false, fmt.Errorf("Function %s has not suported return type", functionName)
 	}
 }
 
@@ -232,6 +239,7 @@ func (f *VoidFunction) Comment(w io.Writer) {
 type Function struct {
 	VoidFunction
 	ReturnType string
+	IsStar     bool
 }
 
 //Code writes the wrapper function
@@ -251,8 +259,8 @@ func (f *Function) Code(w io.Writer) {
 			C.elog_error(C.CString(
 				err.Error(),
 			))
-			}
-			`))
+		}
+		`))
 	}
 	w.Write([]byte("ret := "))
 	w.Write([]byte(ToUnexported(f.Name) + "(\n"))
@@ -260,8 +268,19 @@ func (f *Function) Code(w io.Writer) {
 		w.Write([]byte(p.Name + ",\n"))
 	}
 	w.Write([]byte(")\n"))
-	w.Write([]byte("return toDatum(ret)\n"))
+	if f.IsStar {
+		w.Write([]byte(`
+		if(ret==nil){
+			fcinfo.isnull=C.char(1);
+			return toDatum(nil)
+		}
+		return toDatum(*ret)
+		`))
+	} else {
+		w.Write([]byte("return toDatum(ret)\n"))
+	}
 	w.Write([]byte("}\n"))
+
 }
 
 //SQL writes the SQL command that creates the function in DB
