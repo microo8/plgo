@@ -25,11 +25,11 @@ package plgo
 PG_MODULE_MAGIC;
 #endif
 
-int varsize(void *var) {
+int __varsize(void *var) {
     return VARSIZE(var);
 }
 
-int varsize_any(void *var) {
+int __varsize_any(void *var) {
     return VARSIZE_ANY_EXHDR(var);
 }
 
@@ -146,7 +146,7 @@ Datum array_to_datum(Oid element_type, Datum* vals, int size) {
 }
 
 Datum jsonb_to_datum(char* val) {
-	return (Datum) DatumGetJsonb(DirectFunctionCall1(jsonb_in, (Datum) (char *) val));
+	return (Datum) DatumGetJsonbP(DirectFunctionCall1(jsonb_in, (Datum) (char *) val));
 }
 
 //Datum to val //////////////////////////////////////////////////////////
@@ -233,7 +233,7 @@ char* unknown_to_char(Datum val) {
 }
 
 char* datum_to_jsonb_cstring(Datum val) {
-	Jsonb *jsonb = DatumGetJsonb(val);
+	Jsonb *jsonb = DatumGetJsonbP(val);
 	return JsonbToCString(NULL, &jsonb->root, VARSIZE(jsonb));
 }
 
@@ -354,7 +354,7 @@ type funcInfo C.FunctionCallInfoData
 
 //CalledAsTrigger checks if the function is called as trigger
 func (fcinfo *funcInfo) CalledAsTrigger() bool {
-	return C.called_as_trigger((*C.struct_FunctionCallInfoData)(unsafe.Pointer(fcinfo))) == C.true
+	return C.called_as_trigger((*C.struct_FunctionCallInfoData)(unsafe.Pointer(fcinfo))) == (C._Bool)(true)
 }
 
 //TODO Scan must return argument also if the function is called as trigger
@@ -407,47 +407,47 @@ type TriggerData struct {
 
 //FiredBefore returns true if the trigger fired before the operation.
 func (td *TriggerData) FiredBefore() bool {
-	return C.trigger_fired_before(td.tgEvent) == C.true
+	return C.trigger_fired_before(td.tgEvent) == (C._Bool)(true)
 }
 
 //FiredAfter returns true if the trigger fired after the operation.
 func (td *TriggerData) FiredAfter() bool {
-	return C.trigger_fired_after(td.tgEvent) == C.true
+	return C.trigger_fired_after(td.tgEvent) == (C._Bool)(true)
 }
 
 //FiredInstead returns true if the trigger fired instead of the operation.
 func (td *TriggerData) FiredInstead() bool {
-	return C.trigger_fired_instead(td.tgEvent) == C.true
+	return C.trigger_fired_instead(td.tgEvent) == (C._Bool)(true)
 }
 
 //FiredForRow returns true if the trigger fired for a row-level event.
 func (td *TriggerData) FiredForRow() bool {
-	return C.trigger_fired_for_row(td.tgEvent) == C.true
+	return C.trigger_fired_for_row(td.tgEvent) == (C._Bool)(true)
 }
 
 //FiredForStatement returns true if the trigger fired for a statement-level event.
 func (td *TriggerData) FiredForStatement() bool {
-	return C.trigger_fired_for_statement(td.tgEvent) == C.true
+	return C.trigger_fired_for_statement(td.tgEvent) == (C._Bool)(true)
 }
 
 //FiredByInsert returns true if the trigger was fired by an INSERT command.
 func (td *TriggerData) FiredByInsert() bool {
-	return C.trigger_fired_by_insert(td.tgEvent) == C.true
+	return C.trigger_fired_by_insert(td.tgEvent) == (C._Bool)(true)
 }
 
 //FiredByUpdate returns true if the trigger was fired by an UPDATE command.
 func (td *TriggerData) FiredByUpdate() bool {
-	return C.trigger_fired_by_update(td.tgEvent) == C.true
+	return C.trigger_fired_by_update(td.tgEvent) == (C._Bool)(true)
 }
 
 //FiredByDelete returns true if the trigger was fired by a DELETE command.
 func (td *TriggerData) FiredByDelete() bool {
-	return C.trigger_fired_by_delete(td.tgEvent) == C.true
+	return C.trigger_fired_by_delete(td.tgEvent) == (C._Bool)(true)
 }
 
 //FiredByTruncate returns true if the trigger was fired by a TRUNCATE command.
 func (td *TriggerData) FiredByTruncate() bool {
-	return C.trigger_fired_by_truncate(td.tgEvent) == C.true
+	return C.trigger_fired_by_truncate(td.tgEvent) == (C._Bool)(true)
 }
 
 //TriggerRow is used in TriggerData as NewRow and OldRow
@@ -537,9 +537,9 @@ func toDatum(val interface{}) Datum {
 		return (Datum)(C.timetz_to_datum(C.TimestampTz((v.UTC().Unix() - 946684800) * int64(C.USECS_PER_SEC))))
 	case bool:
 		if v {
-			return (Datum)(C.bool_to_datum(C.true))
+			return (Datum)(C.bool_to_datum((C._Bool)(true)))
 		}
-		return (Datum)(C.bool_to_datum(C.false))
+		return (Datum)(C.bool_to_datum((C._Bool)(false)))
 	case []string:
 		return makeArray(C.TEXTOID, v)
 	case []int16:
@@ -571,9 +571,9 @@ func toDatum(val interface{}) Datum {
 		isNull := make([]C.bool, len(v.attrs))
 		for i, attr := range v.attrs {
 			if attr == (C.Datum)(toDatum(nil)) {
-				isNull[i] = C.true
+				isNull[i] = (C._Bool)(true)
 			} else {
-				isNull[i] = C.false
+				isNull[i] = (C._Bool)(false)
 			}
 		}
 		heapTuple := C.heap_form_tuple(v.tupleDesc, &v.attrs[0], &isNull[0])
@@ -600,7 +600,7 @@ func (db *DB) Prepare(query string, types []string) (*Stmt, error) {
 		typeIds = make([]C.Oid, len(types))
 		var typmod C.int32
 		for i, t := range types {
-			C.parseTypeString(C.CString(t), &typeIds[i], &typmod, C.false)
+			C.parseTypeString(C.CString(t), &typeIds[i], &typmod, (C._Bool)(false))
 		}
 		typeIdsP = &typeIds[0]
 	}
@@ -618,7 +618,7 @@ func (stmt *Stmt) Query(args ...interface{}) (*Rows, error) {
 	if err != nil {
 		return nil, err
 	}
-	rv := C.SPI_execute_plan(stmt.spiPlan, valuesP, nullsP, C.true, 0)
+	rv := C.SPI_execute_plan(stmt.spiPlan, valuesP, nullsP, (C._Bool)(true), 0)
 	if rv == C.SPI_OK_SELECT && C.SPI_processed > 0 {
 		return newRows(C.SPI_tuptable.vals, C.SPI_tuptable.tupdesc, C.uint64(C.SPI_processed)), nil
 	}
@@ -631,7 +631,7 @@ func (stmt *Stmt) QueryRow(args ...interface{}) (*Row, error) {
 	if err != nil {
 		return nil, err
 	}
-	rv := C.SPI_execute_plan(stmt.spiPlan, valuesP, nullsP, C.false, 1)
+	rv := C.SPI_execute_plan(stmt.spiPlan, valuesP, nullsP, (C._Bool)(false), 1)
 	if rv >= C.int(0) && C.SPI_processed == 1 {
 		return &Row{
 			heapTuple: C.get_heap_tuple(C.SPI_tuptable.vals, C.uint(0)),
@@ -647,7 +647,7 @@ func (stmt *Stmt) Exec(args ...interface{}) error {
 	if err != nil {
 		return err
 	}
-	rv := C.SPI_execute_plan(stmt.spiPlan, valuesP, nullsP, C.false, 0)
+	rv := C.SPI_execute_plan(stmt.spiPlan, valuesP, nullsP, (C._Bool)(false), 0)
 	if rv >= C.int(0) && C.SPI_processed == 0 {
 		return nil
 	}
@@ -840,7 +840,7 @@ func scanVal(oid C.Oid, typeName string, val C.Datum, arg interface{}) error {
 	case *bool:
 		switch oid {
 		case C.BOOLOID:
-			*targ = C.datum_to_bool(val) == C.true
+			*targ = C.datum_to_bool(val) == (C._Bool)(true)
 		default:
 			return fmt.Errorf("Column type is not bool %s", typeName)
 		}
@@ -863,9 +863,9 @@ func scanVal(oid C.Oid, typeName string, val C.Datum, arg interface{}) error {
 		case C.BYTEAOID:
 			bytea := C.datum_to_byteap(val)
 			byteaPointer := unsafe.Pointer(bytea)
-			*targ = C.GoBytes(unsafe.Pointer(C.bytea_to_chars(bytea)), C.varsize_any(byteaPointer))
+			*targ = C.GoBytes(unsafe.Pointer(C.bytea_to_chars(bytea)), C.__varsize_any(byteaPointer))
 		default:
-			return fmt.Errorf("Column type is not byte array %s", typeName)
+			return fmt.Errorf("Column type is not bytea %s", typeName)
 		}
 	case *time.Time:
 		switch oid {
