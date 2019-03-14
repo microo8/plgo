@@ -618,7 +618,7 @@ func (stmt *Stmt) Query(args ...interface{}) (*Rows, error) {
 	if err != nil {
 		return nil, err
 	}
-	rv := C.SPI_execute_plan(stmt.spiPlan, valuesP, nullsP, (C._Bool)(true), 0)
+	rv := C.SPI_execute_plan(stmt.spiPlan, valuesP, nullsP, (C._Bool)(false), 0)
 	if rv == C.SPI_OK_SELECT && C.SPI_processed > 0 {
 		return newRows(C.SPI_tuptable.vals, C.SPI_tuptable.tupdesc, C.uint64(C.SPI_processed)), nil
 	}
