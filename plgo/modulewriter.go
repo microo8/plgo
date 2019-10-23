@@ -32,7 +32,15 @@ type ModuleWriter struct {
 //NewModuleWriter parses the go package and returns the FileSet and AST
 func NewModuleWriter(packagePath string) (*ModuleWriter, error) {
 	fset := token.NewFileSet()
-	f, err := parser.ParseDir(fset, packagePath, nil, parser.ParseComments)
+	//za+
+	filtertestfiles := func(fi os.FileInfo) bool {
+		if strings.HasSuffix(fi.Name(), "_test.go") {
+			return false
+		}
+		return true
+	}
+	//za+
+	f, err := parser.ParseDir(fset, packagePath, filtertestfiles, parser.ParseComments)
 	if err != nil {
 		return nil, fmt.Errorf("Cannot parse package: %s", err)
 	}
@@ -128,7 +136,7 @@ func (mw *ModuleWriter) writeplgo(tempPackagePath string) error {
 	if err != nil {
 		return fmt.Errorf("Cannot run pg_config: %s", err)
 	}
-	plgoSource = strings.Replace(plgoSource, "/usr/include/postgresql/server", string(postgresIncludeDir), 1)
+	plgoSource = strings.Replace(plgoSource, "/usr/include/postgresql/server", getcorrectpath(string(postgresIncludeDir)), 1)
 	var funcdec string
 	for _, f := range mw.functions {
 		funcdec += f.FuncDec()
