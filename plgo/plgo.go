@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 )
 
 func printUsage() {
@@ -17,12 +18,17 @@ func buildPackage(buildPath, packageName string) error {
 	if err := os.Setenv("CGO_LDFLAGS_ALLOW", "-shared"); err != nil {
 		return err
 	}
-	switchx := ""
+	switchx := "-v" // substitutor
 	if verbose {
 		switchx = "-x"
 	}
-	goBuild := exec.Command("go", "build", switchx, "-buildmode=c-shared",
-		"-o", filepath.Join("build", packageName+".so"),
+	fileExt := ".so"
+	if runtime.GOOS == "windows" {
+		fileExt = ".dll"
+	}
+	goBuild := exec.Command("go", "build", switchx,
+		"-buildmode=c-shared",
+		"-o", filepath.Join("build", packageName+fileExt),
 		filepath.Join(buildPath, "package.go"),
 		filepath.Join(buildPath, "methods.go"),
 		filepath.Join(buildPath, "pl.go"),

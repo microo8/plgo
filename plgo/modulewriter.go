@@ -32,14 +32,14 @@ type ModuleWriter struct {
 //NewModuleWriter parses the go package and returns the FileSet and AST
 func NewModuleWriter(packagePath string) (*ModuleWriter, error) {
 	fset := token.NewFileSet()
-	//za+
+	// skip _test files in current package
 	filtertestfiles := func(fi os.FileInfo) bool {
 		if strings.HasSuffix(fi.Name(), "_test.go") {
 			return false
 		}
 		return true
 	}
-	//za+
+
 	f, err := parser.ParseDir(fset, packagePath, filtertestfiles, parser.ParseComments)
 	if err != nil {
 		return nil, fmt.Errorf("Cannot parse package: %s", err)
@@ -71,7 +71,14 @@ func NewModuleWriter(packagePath string) (*ModuleWriter, error) {
 
 //WriteModule writes the tmp module wrapper
 func (mw *ModuleWriter) WriteModule() (string, error) {
-	tempPackagePath, err := ioutil.TempDir("", plgo)
+	// Need temp dir in current progect's dir because we use LDFLAGS -L../
+	// because we need our own interface library created with dlltool.exe -d postgres.def -l postgresInterfaceLib.
+	// Statdard postgres binary postgres.lib compiled by msvc can't be used by gcc on windows (silently).
+	whereTmp, errtmp := os.Getwd()
+	if errtmp != nil {
+		return "", fmt.Errorf("Cannot get current dir: %s", errtmp)
+	}
+	tempPackagePath, err := ioutil.TempDir(whereTmp, plgo)
 	if err != nil {
 		return "", fmt.Errorf("Cannot get tempdir: %s", err)
 	}
@@ -136,7 +143,11 @@ func (mw *ModuleWriter) writeplgo(tempPackagePath string) error {
 	if err != nil {
 		return fmt.Errorf("Cannot run pg_config: %s", err)
 	}
-	plgoSource = strings.Replace(plgoSource, "/usr/include/postgresql/server", getcorrectpath(string(postgresIncludeDir)), 1)
+	postgresIncludeStr := getcorrectpath(string(postgresIncludeDir)) // corrects 8.3 filenames on windows
+	plgoSource = strings.Replace(plgoSource, "/usr/include/postgresql/server", postgresIncludeStr, 1)
+
+	addOtherIncludesAndLDFLAGS(&plgoSource, postgresIncludeStr) // on mingw windows workarounds
+
 	var funcdec string
 	for _, f := range mw.functions {
 		funcdec += f.FuncDec()
