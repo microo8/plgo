@@ -11,8 +11,10 @@ $YourPathToMSVCbin = 'C:\Program Files (x86)\Microsoft Visual Studio\2017\Commun
 'LIBRARY postgres.exe
 EXPORTS' | Out-File .\postgresExeExports.def -encoding utf8
 
+echo 'running dumpbin.exe /exports '$YourPathToPostgres'bin\postgres.exe'
 # // runs msvc's dumpbin.exe /exports to get exports of postgres.exe
 & $YourPathToMSVCbin'Hostx64\x64\dumpbin.exe' /exports $YourPathToPostgres'bin\postgres.exe' | Select-Object -Skip 19 | Select-Object -SkipLast 8 | foreach { echo $_.ToString().SubString(26)} | Out-File .\postgresExeExports.def -Append -encoding utf8
 
+echo 'running dlltool.exe -d .\postgresExeExports.def -l libpostgresInterfaceLib.a -D postgres.exe' $YourPathToPostgres'bin\postgres.exe'
 # // generates 'interface library' from .def file to use with gcc mingw on Windows to link to postgres.exe
-dlltool.exe -d .\postgresExeExports.def -l libpostgresexe.lib -D postgres.exe $YourPathToPostgres'bin\postgres.exe'
+dlltool.exe -d .\postgresExeExports.def -l libpostgresInterfaceLib.a -D postgres.exe $YourPathToPostgres'bin\postgres.exe'

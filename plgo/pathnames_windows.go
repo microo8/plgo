@@ -1,7 +1,6 @@
 // +build windows
 
 // also need to include
-// include\server\port\win32_msvc
 // include\server\port\win32
 // include\server
 // include
@@ -57,7 +56,7 @@ morechars:
 func addOtherIncludesAndLDFLAGS(plgoSource *string, postgresIncludeDir string) {
 	windowsCFLAGS := `
 #cgo CFLAGS:  -DHAVE_LONG_LONG_INT_64 -I"{{postgresinclude}}/port/win32"
-// our import(interface) library libpostgresInterfaceLib.a build by mingw's dlltool.exe is in -L../
+// our interface library libpostgresInterfaceLib.a build by mingw's dlltool.exe is in -L../
 #cgo LDFLAGS: -L../ -L "{{postgresinclude}}/../../lib/"
 // import library postgres.lib build by msvc CAN'T be used by mingw gcc on windows, silent erronous usage.
 #cgo LDFLAGS: -lpostgresInterfaceLib  
