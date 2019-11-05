@@ -1,8 +1,11 @@
 package plgo
 
 /*
-#cgo CFLAGS: -I/usr/include/postgresql/server
+#cgo CFLAGS: -I"/usr/include/postgresql/server" -fpic
 #cgo LDFLAGS: -shared
+//{windowsCFLAGS}
+
+typedef unsigned int uint;
 
 #include "postgres.h"
 #include "fmgr.h"
