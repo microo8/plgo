@@ -95,7 +95,7 @@ go to the `build` directory and install your new extension:
 
 ```bash
 $ cd build
-$ sudo make install
+$ sudo make install with_llvm=no
 ```
 
 this installs your extension to DB. You can then use this extension in db:
