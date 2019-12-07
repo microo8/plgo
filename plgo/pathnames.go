@@ -2,7 +2,10 @@
 
 package main
 
-import "strings"
+import (
+	"io/ioutil"
+	"strings"
+)
 
 // getcorrectpath used on Windows, see file pathnames_windows.go
 func getcorrectpath(p string) string {
@@ -13,4 +16,8 @@ func getcorrectpath(p string) string {
 // addOtherIncludesAndLDFLAGS used on Windows, see file pathnames_windows.go
 func addOtherIncludesAndLDFLAGS(plgoSource *string, postgresIncludeDir string) {
 	return
+}
+
+func buildPath() (string, error) {
+	return ioutil.TempDir("", plgo)
 }

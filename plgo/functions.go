@@ -198,7 +198,7 @@ func (f *VoidFunction) Code(w io.Writer) {
 		}
 		w.Write([]byte(")\n"))
 	}
-	w.Write([]byte(ToUnexported(f.Name) + "(\n"))
+	w.Write([]byte("__" + f.Name + "(\n"))
 	for _, p := range f.Params {
 		w.Write([]byte(p.Name + ",\n"))
 	}
@@ -263,7 +263,7 @@ func (f *Function) Code(w io.Writer) {
 		`))
 	}
 	w.Write([]byte("ret := "))
-	w.Write([]byte(ToUnexported(f.Name) + "(\n"))
+	w.Write([]byte("__" + f.Name + "(\n"))
 	for _, p := range f.Params {
 		w.Write([]byte(p.Name + ",\n"))
 	}
@@ -292,9 +292,12 @@ func (f *Function) SQL(packageName string, w io.Writer) {
 	}
 	w.Write([]byte(strings.Join(paramsString, ",")))
 	w.Write([]byte(")\n"))
-	if f.ReturnType[:2] == "[]" {
+	switch {
+	case f.ReturnType == "[]byte":
+		w.Write([]byte("RETURNS bytea AS\n"))
+	case strings.HasPrefix(f.ReturnType[:2], "[]"):
 		w.Write([]byte("RETURNS " + datumTypes[f.ReturnType[2:len(f.ReturnType)]] + "[] AS\n"))
-	} else {
+	default:
 		w.Write([]byte("RETURNS " + datumTypes[f.ReturnType] + " AS\n"))
 	}
 	w.Write([]byte("'$libdir/" + packageName + "', '" + f.Name + "'\n"))
@@ -326,7 +329,7 @@ func (f *TriggerFunction) Code(w io.Writer) {
 		w.Write([]byte(")\n"))
 	}
 	w.Write([]byte("ret := "))
-	w.Write([]byte(ToUnexported(f.Name) + "(\nfcinfo.TriggerData(),\n"))
+	w.Write([]byte("__" + f.Name + "(\nfcinfo.TriggerData(),\n"))
 	for _, p := range f.Params {
 		w.Write([]byte(p.Name + ",\n"))
 	}

@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -61,6 +62,7 @@ func main() {
 		fmt.Println(err)
 		return
 	}
+	log.Println(tempPackagePath)
 	if _, err = os.Stat("build"); os.IsNotExist(err) {
 		err = os.Mkdir("build", 0744)
 		if err != nil {

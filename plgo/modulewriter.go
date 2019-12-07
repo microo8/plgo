@@ -42,7 +42,7 @@ func NewModuleWriter(packagePath string) (*ModuleWriter, error) {
 
 	f, err := parser.ParseDir(fset, packagePath, filtertestfiles, parser.ParseComments)
 	if err != nil {
-		return nil, fmt.Errorf("Cannot parse package: %s", err)
+		return nil, fmt.Errorf("Cannot parse package: %w", err)
 	}
 	if len(f) > 1 {
 		return nil, fmt.Errorf("More than one package in %s", packagePath)
@@ -71,16 +71,9 @@ func NewModuleWriter(packagePath string) (*ModuleWriter, error) {
 
 //WriteModule writes the tmp module wrapper
 func (mw *ModuleWriter) WriteModule() (string, error) {
-	// Need temp dir in current progect's dir because we use LDFLAGS -L../
-	// because we need our own interface library created with dlltool.exe -d postgres.def -l postgresInterfaceLib.
-	// Statdard postgres binary postgres.lib compiled by msvc can't be used by gcc on windows (silently).
-	whereTmp, errtmp := os.Getwd()
-	if errtmp != nil {
-		return "", fmt.Errorf("Cannot get current dir: %s", errtmp)
-	}
-	tempPackagePath, err := ioutil.TempDir(whereTmp, plgo)
+	tempPackagePath, err := buildPath()
 	if err != nil {
-		return "", fmt.Errorf("Cannot get tempdir: %s", err)
+		return "", fmt.Errorf("Cannot get tempdir: %w", err)
 	}
 	err = mw.writeUserPackage(tempPackagePath)
 	if err != nil {
@@ -94,7 +87,6 @@ func (mw *ModuleWriter) WriteModule() (string, error) {
 	if err != nil {
 		return "", err
 	}
-
 	return tempPackagePath, nil
 }
 
@@ -102,14 +94,14 @@ func (mw *ModuleWriter) writeUserPackage(tempPackagePath string) error {
 	ast.Walk(new(Remover), mw.packageAst)
 	packageFile, err := os.Create(filepath.Join(tempPackagePath, "package.go"))
 	if err != nil {
-		return fmt.Errorf("Cannot write file tempdir: %s", err)
+		return fmt.Errorf("Cannot write file tempdir: %w", err)
 	}
 	if err = format.Node(packageFile, mw.fset, ast.MergePackageFiles(mw.packageAst, ast.FilterFuncDuplicates)); err != nil {
-		return fmt.Errorf("Cannot format package %s", err)
+		return fmt.Errorf("Cannot format package %w", err)
 	}
 	err = packageFile.Close()
 	if err != nil {
-		return fmt.Errorf("Cannot write file tempdir: %s", err)
+		return fmt.Errorf("Cannot write file tempdir: %w", err)
 	}
 	return nil
 }
@@ -126,7 +118,7 @@ func readPlGoSource() ([]byte, error) {
 		} else if os.IsNotExist(err) {
 			continue // try the next
 		} else {
-			return nil, fmt.Errorf("Cannot read plgo package: %s", err)
+			return nil, fmt.Errorf("Cannot read plgo package: %w", err)
 		}
 	}
 	return nil, fmt.Errorf("Package github.com/microo8/plgo not installed\nplease install it with: go get -u github.com/microo8/plgo/plgo")
@@ -141,7 +133,7 @@ func (mw *ModuleWriter) writeplgo(tempPackagePath string) error {
 	plgoSource = "package main\n\n" + plgoSource[12:]
 	postgresIncludeDir, err := exec.Command("pg_config", "--includedir-server").CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("Cannot run pg_config: %s", err)
+		return fmt.Errorf("Cannot run pg_config: %w", err)
 	}
 	postgresIncludeStr := getcorrectpath(string(postgresIncludeDir)) // corrects 8.3 filenames on windows
 	plgoSource = strings.Replace(plgoSource, "/usr/include/postgresql/server", postgresIncludeStr, 1)
@@ -155,7 +147,7 @@ func (mw *ModuleWriter) writeplgo(tempPackagePath string) error {
 	plgoSource = strings.Replace(plgoSource, "//{funcdec}", funcdec, 1)
 	err = ioutil.WriteFile(filepath.Join(tempPackagePath, "pl.go"), []byte(plgoSource), 0644)
 	if err != nil {
-		return fmt.Errorf("Cannot write file tempdir: %s", err)
+		return fmt.Errorf("Cannot write file tempdir: %w", err)
 	}
 	return nil
 }
@@ -173,7 +165,7 @@ extern void elog_error(char* string);
 import "C"
 `)
 	if err != nil {
-		return fmt.Errorf("Cannot write file tempdir: %s", err)
+		return fmt.Errorf("Cannot write file tempdir: %w", err)
 	}
 	for _, f := range mw.functions {
 		f.Code(buf)
@@ -185,7 +177,7 @@ import "C"
 	}
 	err = ioutil.WriteFile(filepath.Join(tempPackagePath, "methods.go"), code, 0644)
 	if err != nil {
-		return fmt.Errorf("Cannot write file tempdir: %s", err)
+		return fmt.Errorf("Cannot write file tempdir: %w", err)
 	}
 	return nil
 }

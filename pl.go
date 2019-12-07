@@ -70,10 +70,16 @@ Datum get_heap_getattr(HeapTuple ht, uint i, TupleDesc td) {
 	return ret;
 }
 
-
 //val to datum//////////////////////////////////////////////////
 Datum void_datum(){
     PG_RETURN_VOID();
+}
+
+Datum bytes_to_datum(void *val, uint len) {
+	void *v = (void *)palloc(len + VARHDRSZ);
+	SET_VARSIZE(v, len + VARHDRSZ);
+	memcpy(VARDATA(v), val, len);
+	return PointerGetDatum(v);
 }
 
 Datum cstring_to_datum(char *val) {
@@ -290,8 +296,6 @@ import (
 	"unsafe"
 )
 
-//TODO check all public things
-
 //this has to be here
 func main() {}
 
@@ -335,9 +339,13 @@ type elog struct {
 func (e *elog) Write(p []byte) (n int, err error) {
 	switch e.Level {
 	case noticeLevel:
-		C.elog_notice(C.CString(string(p)))
+		cp := C.CString(string(p))
+		defer C.free(unsafe.Pointer(cp))
+		C.elog_notice(cp)
 	case errorLevel:
-		C.elog_error(C.CString(string(p)))
+		cp := C.CString(string(p))
+		defer C.free(unsafe.Pointer(cp))
+		C.elog_error(cp)
 	}
 	return len(p), nil
 }
@@ -353,11 +361,11 @@ func NewErrorLogger(prefix string, flag int) *log.Logger {
 }
 
 //funcInfo is the type of parameters that all functions get
-type funcInfo C.FunctionCallInfoData
+type funcInfo C.FunctionCallInfoBaseData
 
 //CalledAsTrigger checks if the function is called as trigger
 func (fcinfo *funcInfo) CalledAsTrigger() bool {
-	return C.called_as_trigger((*C.struct_FunctionCallInfoData)(unsafe.Pointer(fcinfo))) == (C._Bool)(true)
+	return C.called_as_trigger((*C.struct_FunctionCallInfoBaseData)(unsafe.Pointer(fcinfo))) == (C._Bool)(true)
 }
 
 //TODO Scan must return argument also if the function is called as trigger
@@ -365,7 +373,7 @@ func (fcinfo *funcInfo) CalledAsTrigger() bool {
 //Scan sets the args to the function parameter values (converted from PostgreSQL types to Go types)
 func (fcinfo *funcInfo) Scan(args ...interface{}) error {
 	for i, arg := range args {
-		funcArg := C.get_arg((*C.struct_FunctionCallInfoData)(unsafe.Pointer(fcinfo)), C.uint(i))
+		funcArg := C.get_arg((*C.struct_FunctionCallInfoBaseData)(unsafe.Pointer(fcinfo)), C.uint(i))
 		argOid := C.get_call_expr_argtype(fcinfo.flinfo.fn_expr, C.int(i))
 		err := scanVal(argOid, "", funcArg, arg)
 		if err != nil {
@@ -513,11 +521,17 @@ func makeSlice(val C.Datum) []C.Datum {
 func toDatum(val interface{}) Datum {
 	switch v := val.(type) {
 	case error:
-		return (Datum)(C.cstring_to_datum(C.CString(v.Error())))
+		s := C.CString(v.Error())
+		defer C.free(unsafe.Pointer(s))
+		return (Datum)(C.cstring_to_datum(s))
 	case string:
-		return (Datum)(C.cstring_to_datum(C.CString(v)))
+		s := C.CString(v)
+		defer C.free(unsafe.Pointer(s))
+		return (Datum)(C.cstring_to_datum(s))
 	case []byte:
-		return *(*Datum)(unsafe.Pointer(&v[0]))
+		b := C.CBytes(v)
+		defer C.free(b)
+		return (Datum)(C.bytes_to_datum(b, C.uint(len(v))))
 	case int16:
 		return (Datum)(C.int16_to_datum(C.int16(v)))
 	case uint16:
@@ -603,11 +617,15 @@ func (db *DB) Prepare(query string, types []string) (*Stmt, error) {
 		typeIds = make([]C.Oid, len(types))
 		var typmod C.int32
 		for i, t := range types {
-			C.parseTypeString(C.CString(t), &typeIds[i], &typmod, (C._Bool)(false))
+			ct := C.CString(t)
+			defer C.free(unsafe.Pointer(ct))
+			C.parseTypeString(ct, &typeIds[i], &typmod, (C._Bool)(false))
 		}
 		typeIdsP = &typeIds[0]
 	}
-	cplan := C.SPI_prepare(C.CString(query), C.int(len(types)), typeIdsP)
+	cq := C.CString(query)
+	defer C.free(unsafe.Pointer(cq))
+	cplan := C.SPI_prepare(cq, C.int(len(types)), typeIdsP)
 	if cplan != nil {
 		return &Stmt{spiPlan: cplan, db: db, typeIds: typeIds}, nil
 	}
@@ -673,7 +691,9 @@ func (stmt *Stmt) spiArgs(args []interface{}) (valuesP *C.Datum, nullsP *C.char,
 			if err != nil {
 				return nil, nil, err
 			}
-			values[i] = (Datum)(C.jsonb_to_datum(C.CString(string(jsonData))))
+			cjson := C.CString(string(jsonData))
+			defer C.free(unsafe.Pointer(cjson))
+			values[i] = (Datum)(C.jsonb_to_datum(cjson))
 		case C.JSONOID:
 			jsonData, err := json.Marshal(arg)
 			if err != nil {

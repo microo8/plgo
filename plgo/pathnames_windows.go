@@ -67,3 +67,10 @@ func addOtherIncludesAndLDFLAGS(plgoSource *string, postgresIncludeDir string) {
 
 	return
 }
+
+// Need temp dir in current progect's dir because we use LDFLAGS -L../
+// because we need our own interface library created with dlltool.exe -d postgres.def -l postgresInterfaceLib.
+// Statdard postgres binary postgres.lib compiled by msvc can't be used by gcc on windows (silently).
+func buildPath() (string, error) {
+	return os.Getwd()
+}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"log"
 	"math"
@@ -15,18 +16,19 @@ func PLGoTest() {
 	t := plgo.NewNoticeLogger("", log.Ltime|log.Lshortfile)
 	defer t.Println("TEST end")
 
-	testConnection(t)
-	testQueryOutputText(t)
-	testQueryOutputInt(t)
-	testQueryOutputTime(t)
-	testQueryOutputBool(t)
-	testQueryOutputFloat32(t)
-	testQueryOutputFloat64(t)
-	testQueryOutputArrayText(t)
-	testQueryOutputArrayInt(t)
-	testQueryOutputArrayFloat(t)
-	testJSON(t)
-	//testGoroutines(t)
+	testConnection(plgo.NewNoticeLogger("testConnection", log.Ltime|log.Lshortfile))
+	testQueryOutputText(plgo.NewNoticeLogger("testQueryOutputText", log.Ltime|log.Lshortfile))
+	testQueryOutputInt(plgo.NewNoticeLogger("testQueryOutputInt", log.Ltime|log.Lshortfile))
+	testQueryOutputTime(plgo.NewNoticeLogger("testQueryOutputTime", log.Ltime|log.Lshortfile))
+	testQueryOutputBool(plgo.NewNoticeLogger("testQueryOutputBool", log.Ltime|log.Lshortfile))
+	testQueryOutputFloat32(plgo.NewNoticeLogger("testQueryOutputFloat32", log.Ltime|log.Lshortfile))
+	testQueryOutputFloat64(plgo.NewNoticeLogger("testQueryOutputFloat64", log.Ltime|log.Lshortfile))
+	testQueryOutputArrayText(plgo.NewNoticeLogger("testQueryOutputArrayText", log.Ltime|log.Lshortfile))
+	testQueryOutputArrayInt(plgo.NewNoticeLogger("testQueryOutputArrayInt", log.Ltime|log.Lshortfile))
+	testQueryOutputArrayFloat(plgo.NewNoticeLogger("testQueryOutputArrayFloat", log.Ltime|log.Lshortfile))
+	testJSON(plgo.NewNoticeLogger("testJSON", log.Ltime|log.Lshortfile))
+	//testGoroutines(plgo.NewNoticeLogger("testGoroutines", log.Ltime|log.Lshortfile))
+	testFunctionByteaOutput(plgo.NewNoticeLogger("testFunctionByteaOutput", log.Ltime|log.Lshortfile))
 }
 
 func testConnection(t *log.Logger) {
@@ -598,24 +600,24 @@ type exampleStruct struct {
 func initJSONTable(db *plgo.DB) error {
 	drop, err := db.Prepare("drop table if exists example", nil)
 	if err != nil {
-		return fmt.Errorf("prepare %s", err)
+		return fmt.Errorf("prepare %w", err)
 	}
 	if err = drop.Exec(); err != nil {
-		return fmt.Errorf("cannot drop table %s", err)
+		return fmt.Errorf("cannot drop table %w", err)
 	}
 	create, err := db.Prepare("create table example (id serial primary key, jsonval json, jsonbval jsonb)", nil)
 	if err != nil {
-		return fmt.Errorf("prepare %s", err)
+		return fmt.Errorf("prepare %w", err)
 	}
 	if err = create.Exec(); err != nil {
-		return fmt.Errorf("cannot create table %s", err)
+		return fmt.Errorf("cannot create table %w", err)
 	}
 	insert, err := db.Prepare(`insert into example (jsonval, jsonbval) values ('{"val1":1,"val2":"foo"}','{"val1":1,"val2":"foo"}')`, nil)
 	if err != nil {
-		return fmt.Errorf("prepare %s", err)
+		return fmt.Errorf("prepare %w", err)
 	}
 	if err = insert.Exec(); err != nil {
-		return fmt.Errorf("cannot insert into table %s", err)
+		return fmt.Errorf("cannot insert into table %w", err)
 	}
 	return nil
 }
@@ -693,4 +695,39 @@ func testJSON(t *log.Logger) {
 	if esb.Val1 != 2 || esb.Val2 != "bar" {
 		t.Fatalln("not correctly loaded json val", e)
 	}
+}
+
+func testFunctionByteaOutput(t *log.Logger) {
+	db, err := plgo.Open()
+	if err != nil {
+		t.Fatal("error opening", err)
+	}
+	defer db.Close()
+	stmt, err := db.Prepare(`select reversebytea($1)`, []string{"bytea"})
+	if err != nil {
+		t.Fatal("prepare", err)
+	}
+	row, err := stmt.QueryRow([]byte("bytea"))
+	if err != nil {
+		t.Fatal("query ", err)
+	}
+	var b []byte
+	if err := row.Scan(&b); err != nil {
+		t.Fatal("bytea scan", err)
+	}
+	if bytes.Compare(b, []byte("aetyb")) != 0 {
+		t.Fatal("returned bytea value isnt 'bytea'")
+	}
+}
+
+func ReverseBytea(v []byte) []byte {
+	ret := make([]byte, len(v))
+	for i, b := range v {
+		ret[len(v)-i-1] = b
+	}
+	return ret
+}
+
+func StringArrayReturn() []string {
+	return []string{"a", "b", "c"}
 }

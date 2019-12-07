@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"compress/gzip"
 	"log"
 	"strings"
 
@@ -60,4 +62,18 @@ func CreatedTimeTrigger(td *plgo.TriggerData) *plgo.TriggerRow {
 //ConcatArray concatenates an array of strings
 func ConcatArray(strs []string) string {
 	return strings.Join(strs, "")
+}
+
+func GzipCompress(data []byte) []byte {
+	logger := plgo.NewErrorLogger("", log.Ltime|log.Lshortfile)
+	var buf bytes.Buffer
+	zw := gzip.NewWriter(&buf)
+	_, err := zw.Write(data)
+	if err != nil {
+		logger.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		logger.Fatal(err)
+	}
+	return buf.Bytes()
 }

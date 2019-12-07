@@ -22,7 +22,7 @@ func (v *FuncVisitor) Visit(node ast.Node) ast.Visitor {
 		return nil
 	}
 	v.functions = append(v.functions, code)
-	function.Name.Name = ToUnexported(function.Name.Name)
+	function.Name.Name = "__" + function.Name.Name
 	return v
 }
 
