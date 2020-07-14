@@ -1,18 +1,23 @@
-[![Report card](http://goreportcard.com/badge/microo8/plgo)](http://goreportcard.com/report/microo8/plgo)
+[![Report card](http://goreportcard.com/badge/paulhatch/plgo)](http://goreportcard.com/report/paulhatch/plgo)
 [![MIT Licence](https://badges.frapsoft.com/os/mit/mit.png?v=103)](https://opensource.org/licenses/mit-license.php)
 
+## Forked
+
+This is a forked copy of microo8's plgo library. The original plgo repo's final commit removed all code replaced with a notice that the project was moving to GitLab, forked the last published version here for a safe reference, with the internal references updated to use this repository.
+
 # plgo
+
 Tool for easily creating PostgreSQL extensions with stored procedures and triggers in golang. It creates wrapper code, PostgreSQL extension files and builds your package.
 
 contribution of all kind welcome!
 
 ## Prerequisites for Linux
 
-`sudo apt-get install postgresql-server-dev-X.Y  #Replace X.Y with your version of Postgres`
+`sudo apt-get install postgresql-server-dev-X.Y #Replace X.Y with your version of Postgres`
 
 ## installation
 
-`go get -u github.com/microo8/plgo/plgo`
+`go get -u github.com/paulhatch/plgo/plgo`
 
 ## write functions
 
@@ -29,7 +34,7 @@ import (
 	"log"
 	"strings"
 
-	"github.com/microo8/plgo"
+	"github.com/paulhatch/plgo"
 )
 
 //from every exported function will be generated a stored procedure

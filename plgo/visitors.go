@@ -33,7 +33,7 @@ type Remover struct{}
 func (v *Remover) Visit(node ast.Node) ast.Visitor {
 	switch n := node.(type) {
 	case *ast.ImportSpec:
-		if n.Path.Value == "\"github.com/microo8/plgo\"" {
+		if n.Path.Value == "\"github.com/paulhatch/plgo\"" {
 			n.Path.Value = ""
 		}
 	case *ast.CallExpr:

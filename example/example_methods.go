@@ -6,7 +6,7 @@ import (
 	"log"
 	"strings"
 
-	"github.com/microo8/plgo"
+	"github.com/paulhatch/plgo"
 )
 
 //Meh prints out message to error elog
