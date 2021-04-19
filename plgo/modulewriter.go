@@ -22,15 +22,16 @@ func ToUnexported(name string) string {
 
 //ModuleWriter writes the tmp module wrapper that will be build to shared object
 type ModuleWriter struct {
-	PackageName string
-	Doc         string
-	fset        *token.FileSet
-	packageAst  *ast.Package
-	functions   []CodeWriter
+	PackageName    string
+	Doc            string
+	fset           *token.FileSet
+	packageAst     *ast.Package
+	functions      []CodeWriter
+	packageVersion string
 }
 
 //NewModuleWriter parses the go package and returns the FileSet and AST
-func NewModuleWriter(packagePath string) (*ModuleWriter, error) {
+func NewModuleWriter(packagePath string, version string) (*ModuleWriter, error) {
 	fset := token.NewFileSet()
 	// skip _test files in current package
 	filtertestfiles := func(fi os.FileInfo) bool {
@@ -66,7 +67,14 @@ func NewModuleWriter(packagePath string) (*ModuleWriter, error) {
 		return nil, err
 	}
 	packageName := filepath.Base(absPackagePath)
-	return &ModuleWriter{PackageName: packageName, Doc: packageDoc, fset: fset, packageAst: packageAst, functions: funcVisitor.functions}, nil
+	return &ModuleWriter{
+		PackageName:    packageName,
+		Doc:            packageDoc,
+		fset:           fset,
+		packageAst:     packageAst,
+		functions:      funcVisitor.functions,
+		packageVersion: version,
+	}, nil
 }
 
 //WriteModule writes the tmp module wrapper
@@ -184,7 +192,7 @@ import "C"
 
 //WriteSQL writes sql file with commands to create functions in DB
 func (mw *ModuleWriter) WriteSQL(tempPackagePath string) error {
-	sqlPath := filepath.Join(tempPackagePath, mw.PackageName+"--0.1.sql")
+	sqlPath := filepath.Join(tempPackagePath, mw.PackageName+"--"+mw.packageVersion+".sql")
 	sqlFile, err := os.Create(sqlPath)
 	if err != nil {
 		return err
@@ -203,7 +211,7 @@ func (mw *ModuleWriter) WriteSQL(tempPackagePath string) error {
 func (mw *ModuleWriter) WriteControl(path string) error {
 	control := []byte(`# ` + mw.PackageName + ` extension
 comment = '` + mw.PackageName + ` extension'
-default_version = '0.1'
+default_version = '` + mw.packageVersion + `'
 relocatable = true`)
 	controlPath := filepath.Join(path, mw.PackageName+".control")
 	return ioutil.WriteFile(controlPath, control, 0644)
@@ -212,7 +220,7 @@ relocatable = true`)
 //WriteMakefile writes .control file for the new postgresql extension
 func (mw *ModuleWriter) WriteMakefile(path string) error {
 	makefile := []byte(`EXTENSION = ` + mw.PackageName + `
-DATA = ` + mw.PackageName + `--0.1.sql  # script files to install
+DATA = ` + mw.PackageName + `--` + mw.packageVersion + `.sql  # script files to install
 # REGRESS = ` + mw.PackageName + `_test     # our test script file (without extension)
 MODULES = ` + mw.PackageName + `          # our c module file to build
 

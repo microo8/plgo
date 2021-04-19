@@ -43,15 +43,17 @@ func buildPackage(buildPath, packageName string) error {
 }
 
 var verbose bool
+var version string
 
 func main() {
-	flag.BoolVar(&verbose, "v", false, "be verbose, 'go build -x'")
+	flag.BoolVar(&verbose, "x", false, "be verbose, 'go build -x'")
+	flag.StringVar(&version, "v", "1.0.0", "set package version")
 	flag.Parse()
 	packagePath := "."
 	if len(flag.Args()) == 1 {
 		packagePath = flag.Arg(0)
 	}
-	moduleWriter, err := NewModuleWriter(packagePath)
+	moduleWriter, err := NewModuleWriter(packagePath, version)
 	if err != nil {
 		fmt.Println(err)
 		printUsage()
