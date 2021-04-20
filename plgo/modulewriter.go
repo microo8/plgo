@@ -35,22 +35,19 @@ func NewModuleWriter(packagePath string, version string) (*ModuleWriter, error) 
 	fset := token.NewFileSet()
 	// skip _test files in current package
 	filtertestfiles := func(fi os.FileInfo) bool {
-		if strings.HasSuffix(fi.Name(), "_test.go") {
-			return false
-		}
-		return true
+		return !strings.HasSuffix(fi.Name(), "_test.go")
 	}
 
 	f, err := parser.ParseDir(fset, packagePath, filtertestfiles, parser.ParseComments)
 	if err != nil {
-		return nil, fmt.Errorf("Cannot parse package: %w", err)
+		return nil, fmt.Errorf("cannot parse package: %w", err)
 	}
 	if len(f) > 1 {
-		return nil, fmt.Errorf("More than one package in %s", packagePath)
+		return nil, fmt.Errorf("more than one package in %s", packagePath)
 	}
 	packageAst, ok := f["main"]
 	if !ok {
-		return nil, fmt.Errorf("No package main in %s", packagePath)
+		return nil, fmt.Errorf("no package main in %s", packagePath)
 	}
 	var packageDoc string
 	for _, packageFile := range packageAst.Files {
@@ -81,7 +78,7 @@ func NewModuleWriter(packagePath string, version string) (*ModuleWriter, error) 
 func (mw *ModuleWriter) WriteModule() (string, error) {
 	tempPackagePath, err := buildPath()
 	if err != nil {
-		return "", fmt.Errorf("Cannot get tempdir: %w", err)
+		return "", fmt.Errorf("cannot get tempdir: %w", err)
 	}
 	err = mw.writeUserPackage(tempPackagePath)
 	if err != nil {
@@ -102,14 +99,14 @@ func (mw *ModuleWriter) writeUserPackage(tempPackagePath string) error {
 	ast.Walk(new(Remover), mw.packageAst)
 	packageFile, err := os.Create(filepath.Join(tempPackagePath, "package.go"))
 	if err != nil {
-		return fmt.Errorf("Cannot write file tempdir: %w", err)
+		return fmt.Errorf("cannot write file tempdir: %w", err)
 	}
 	if err = format.Node(packageFile, mw.fset, ast.MergePackageFiles(mw.packageAst, ast.FilterFuncDuplicates)); err != nil {
-		return fmt.Errorf("Cannot format package %w", err)
+		return fmt.Errorf("cannot format package %w", err)
 	}
 	err = packageFile.Close()
 	if err != nil {
-		return fmt.Errorf("Cannot write file tempdir: %w", err)
+		return fmt.Errorf("cannot write file tempdir: %w", err)
 	}
 	return nil
 }
@@ -126,10 +123,10 @@ func readPlGoSource() ([]byte, error) {
 		} else if os.IsNotExist(err) {
 			continue // try the next
 		} else {
-			return nil, fmt.Errorf("Cannot read plgo package: %w", err)
+			return nil, fmt.Errorf("cannot read plgo package: %w", err)
 		}
 	}
-	return nil, fmt.Errorf("Package github.com/paulhatch/plgo not installed\nplease install it with: go get -u github.com/paulhatch/plgo/plgo")
+	return nil, fmt.Errorf("package github.com/paulhatch/plgo not installed\nplease install it with: go get -u github.com/paulhatch/plgo/plgo")
 }
 
 func (mw *ModuleWriter) writeplgo(tempPackagePath string) error {
@@ -141,7 +138,7 @@ func (mw *ModuleWriter) writeplgo(tempPackagePath string) error {
 	plgoSource = "package main\n\n" + plgoSource[12:]
 	postgresIncludeDir, err := exec.Command("pg_config", "--includedir-server").CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("Cannot run pg_config: %w", err)
+		return fmt.Errorf("cannot run pg_config: %w", err)
 	}
 	postgresIncludeStr := getcorrectpath(string(postgresIncludeDir)) // corrects 8.3 filenames on windows
 	plgoSource = strings.Replace(plgoSource, "/usr/include/postgresql/server", postgresIncludeStr, 1)
@@ -155,7 +152,7 @@ func (mw *ModuleWriter) writeplgo(tempPackagePath string) error {
 	plgoSource = strings.Replace(plgoSource, "//{funcdec}", funcdec, 1)
 	err = ioutil.WriteFile(filepath.Join(tempPackagePath, "pl.go"), []byte(plgoSource), 0644)
 	if err != nil {
-		return fmt.Errorf("Cannot write file tempdir: %w", err)
+		return fmt.Errorf("cannot write file tempdir: %w", err)
 	}
 	return nil
 }
@@ -173,7 +170,7 @@ extern void elog_error(char* string);
 import "C"
 `)
 	if err != nil {
-		return fmt.Errorf("Cannot write file tempdir: %w", err)
+		return fmt.Errorf("cannot write file tempdir: %w", err)
 	}
 	for _, f := range mw.functions {
 		f.Code(buf)
@@ -185,7 +182,7 @@ import "C"
 	}
 	err = ioutil.WriteFile(filepath.Join(tempPackagePath, "methods.go"), code, 0644)
 	if err != nil {
-		return fmt.Errorf("Cannot write file tempdir: %w", err)
+		return fmt.Errorf("cannot write file tempdir: %w", err)
 	}
 	return nil
 }

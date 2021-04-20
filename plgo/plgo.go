@@ -37,7 +37,7 @@ func buildPackage(buildPath, packageName string) error {
 	goBuild.Stdout = os.Stdout
 	goBuild.Stderr = os.Stderr
 	if err := goBuild.Run(); err != nil {
-		return fmt.Errorf("Cannot build package: %s", err)
+		return fmt.Errorf("cannot build package: %s", err)
 	}
 	return nil
 }
