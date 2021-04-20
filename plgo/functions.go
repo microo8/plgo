@@ -96,15 +96,15 @@ func getParamList(function *ast.FuncDecl) (Params []Param, err error) {
 				//*plgo.TriggerData
 				selector, ok := paramType.X.(*ast.SelectorExpr)
 				if !ok {
-					return nil, fmt.Errorf("Function %s, parameter %s: type not supported", function.Name.Name, paramName.Name)
+					return nil, fmt.Errorf("Function %s, parameter %s: type not supported, could not get selector", function.Name.Name, paramName.Name)
 				}
 				var pkg *ast.Ident
 				pkg, ok = selector.X.(*ast.Ident)
 				if !ok {
-					return nil, fmt.Errorf("Function %s, parameter %s: type not supported", function.Name.Name, paramName.Name)
+					return nil, fmt.Errorf("Function %s, parameter %s: type not supported, could not get identifier", function.Name.Name, paramName.Name)
 				}
 				if pkg.Name != plgo || selector.Sel.Name != triggerData {
-					return nil, fmt.Errorf("Function %s, parameter %s: type not supported", function.Name.Name, paramName.Name)
+					return nil, fmt.Errorf("Function %s, parameter %s: type not supported, not plgo.TriggerData", function.Name.Name, paramName.Name)
 				}
 				if i != 0 {
 					return nil, fmt.Errorf("Function %s, parameter %s: *plgo.TriggerData type must be the first parameter", function.Name.Name, paramName.Name)
@@ -114,7 +114,7 @@ func getParamList(function *ast.FuncDecl) (Params []Param, err error) {
 				}
 				Params = append(Params, Param{Name: param.Names[0].Name, Type: "TriggerData"})
 			default:
-				return nil, fmt.Errorf("Function %s, parameter %s: type not supported", function.Name.Name, paramName.Name)
+				return nil, fmt.Errorf("Function %s, parameter %s: type not supported, no match", function.Name.Name, paramName.Name)
 			}
 		}
 	}
