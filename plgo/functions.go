@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/ast"
 	"io"
+	"reflect"
 	"strings"
 )
 
@@ -114,7 +115,7 @@ func getParamList(function *ast.FuncDecl) (Params []Param, err error) {
 				}
 				Params = append(Params, Param{Name: param.Names[0].Name, Type: "TriggerData"})
 			default:
-				return nil, fmt.Errorf("Function %s, parameter %s: type not supported, no match", function.Name.Name, paramName.Name)
+				return nil, fmt.Errorf("Function %s, parameter %s: type not supported, no match for %s", function.Name.Name, paramName.Name, reflect.TypeOf(param.Type))
 			}
 		}
 	}
