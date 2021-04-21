@@ -3,7 +3,7 @@
 
 ## Forked
 
-This is a forked copy of microo8's plgo library. The original plgo repo's final commit removed all code replaced with a notice that the project was moving to GitLab, forked the last published version here for a safe reference, with the internal references updated to use this repository.
+This is a forked version of microo8's plgo library with features added for Konfigraf.
 
 # plgo
 

@@ -172,6 +172,14 @@ import "C"
 	if err != nil {
 		return fmt.Errorf("cannot write file tempdir: %w", err)
 	}
+
+	for _, p := range mw.getPackages() {
+		_, err = buf.WriteString("import \"" + p + "\"\n")
+		if err != nil {
+			return fmt.Errorf("cannot write file tempdir: %w", err)
+		}
+	}
+
 	for _, f := range mw.functions {
 		f.Code(buf)
 	}
@@ -185,6 +193,37 @@ import "C"
 		return fmt.Errorf("cannot write file tempdir: %w", err)
 	}
 	return nil
+}
+
+func (mw *ModuleWriter) getPackages() (Result []string) {
+
+	for _, f := range mw.functions {
+		switch funcType := f.(type) {
+		case *Function:
+			for _, param := range funcType.Params {
+				if idx := strings.IndexByte(param.Type, '.'); idx >= 0 {
+					Result = appendUnique(Result, param.Type[:idx])
+				}
+			}
+		case *VoidFunction:
+			for _, param := range funcType.Params {
+				if idx := strings.IndexByte(param.Type, '.'); idx >= 0 {
+					Result = appendUnique(Result, param.Type[:idx])
+				}
+			}
+		}
+	}
+
+	return
+}
+
+func appendUnique(source []string, item string) []string {
+	for _, v := range source {
+		if v == item {
+			return source
+		}
+	}
+	return append(source, item)
 }
 
 //WriteSQL writes sql file with commands to create functions in DB

@@ -26,7 +26,7 @@ var datumTypes = map[string]string{
 	"uint":        "bigint",
 	"float32":     "real",
 	"float64":     "double precision",
-	"time.Time":   "timestamp with timezone",
+	"time.Time":   "timestamptz",
 	"bool":        "boolean",
 	"[]string":    "text[]",
 	"[]int16":     "smallint[]",
@@ -39,7 +39,7 @@ var datumTypes = map[string]string{
 	"[]float32":   "real[]",
 	"[]float64":   "double precision[]",
 	"[]bool":      "boolean[]",
-	"[]time.Time": "timestamp with timezone[]",
+	"[]time.Time": "timestamptz[]",
 	"TriggerRow":  "trigger",
 }
 
@@ -83,6 +83,18 @@ func getParamList(function *ast.FuncDecl) (Params []Param, err error) {
 					return nil, fmt.Errorf("Function %s, parameter %s: type %s not supported", function.Name.Name, paramName.Name, paramType.Name)
 				}
 				Params = append(Params, Param{Name: paramName.Name, Type: paramType.Name})
+			case *ast.SelectorExpr:
+				//other selector
+				var pkg *ast.Ident
+				pkg, ok := paramType.X.(*ast.Ident)
+				if !ok {
+					return nil, fmt.Errorf("Function %s, parameter %s: type not supported, could not get identifier", function.Name.Name, paramName.Name)
+				}
+				typeName := pkg.Name + "." + paramType.Sel.Name
+				if _, ok := datumTypes[typeName]; !ok {
+					return nil, fmt.Errorf("Function %s, parameter %s: type %s not supported", function.Name.Name, paramName.Name, typeName)
+				}
+				Params = append(Params, Param{Name: paramName.Name, Type: typeName})
 			case *ast.ArrayType:
 				//built in array type
 				arrayType, ok := paramType.Elt.(*ast.Ident)
@@ -105,7 +117,13 @@ func getParamList(function *ast.FuncDecl) (Params []Param, err error) {
 					return nil, fmt.Errorf("Function %s, parameter %s: type not supported, could not get identifier", function.Name.Name, paramName.Name)
 				}
 				if pkg.Name != plgo || selector.Sel.Name != triggerData {
-					return nil, fmt.Errorf("Function %s, parameter %s: type not supported, not plgo.TriggerData", function.Name.Name, paramName.Name)
+					// type is not plgo.TriggerData, check for other supported types
+					typeName := pkg.Name + "." + selector.Sel.Name
+					if _, ok := datumTypes[typeName]; ok {
+						Params = append(Params, Param{Name: paramName.Name, Type: typeName, Null: true})
+						continue
+					}
+					return nil, fmt.Errorf("Function %s, parameter %s: type not supported", function.Name.Name, paramName.Name)
 				}
 				if i != 0 {
 					return nil, fmt.Errorf("Function %s, parameter %s: *plgo.TriggerData type must be the first parameter", function.Name.Name, paramName.Name)
@@ -171,7 +189,13 @@ func getReturnType(functionName string, results *ast.FieldList) (string, bool, e
 
 //Param the parameters of the functions
 type Param struct {
-	Name, Type string
+	Name string
+	Type string
+	Null bool
+}
+
+func (p *Param) sql() string {
+	return p.Name + " " + datumTypes[p.Type]
 }
 
 //VoidFunction is an function with no return type
@@ -201,7 +225,11 @@ func (f *VoidFunction) Code(w io.Writer) {
 	}
 	w.Write([]byte("__" + f.Name + "(\n"))
 	for _, p := range f.Params {
-		w.Write([]byte(p.Name + ",\n"))
+		if p.Null {
+			w.Write([]byte("&" + p.Name + ",\n"))
+		} else {
+			w.Write([]byte(p.Name + ",\n"))
+		}
 	}
 	w.Write([]byte(")\n"))
 	w.Write([]byte("return toDatum(nil)\n"))
@@ -212,14 +240,20 @@ func (f *VoidFunction) Code(w io.Writer) {
 func (f *VoidFunction) SQL(packageName string, w io.Writer) {
 	w.Write([]byte("CREATE OR REPLACE FUNCTION " + f.Name + "("))
 	var paramStrings []string
+	isNull := false
 	for _, p := range f.Params {
-		paramStrings = append(paramStrings, p.Name+" "+datumTypes[p.Type])
+		paramStrings = append(paramStrings, p.sql())
+		isNull = isNull || p.Null
 	}
 	w.Write([]byte(strings.Join(paramStrings, ",")))
 	w.Write([]byte(")\n"))
 	w.Write([]byte("RETURNS VOID AS\n"))
 	w.Write([]byte("'$libdir/" + packageName + "', '" + f.Name + "'\n"))
-	w.Write([]byte("LANGUAGE c VOLATILE STRICT;\n"))
+	if isNull {
+		w.Write([]byte("LANGUAGE c VOLATILE;\n"))
+	} else {
+		w.Write([]byte("LANGUAGE c VOLATILE STRICT;\n"))
+	}
 	if f.Doc == "" {
 		w.Write([]byte("\n"))
 		return
@@ -266,7 +300,11 @@ func (f *Function) Code(w io.Writer) {
 	w.Write([]byte("ret := "))
 	w.Write([]byte("__" + f.Name + "(\n"))
 	for _, p := range f.Params {
-		w.Write([]byte(p.Name + ",\n"))
+		if p.Null {
+			w.Write([]byte("&" + p.Name + ",\n"))
+		} else {
+			w.Write([]byte(p.Name + ",\n"))
+		}
 	}
 	w.Write([]byte(")\n"))
 	if f.IsStar {
@@ -288,8 +326,10 @@ func (f *Function) Code(w io.Writer) {
 func (f *Function) SQL(packageName string, w io.Writer) {
 	w.Write([]byte("CREATE OR REPLACE FUNCTION " + f.Name + "("))
 	var paramsString []string
+	isNull := false
 	for _, p := range f.Params {
-		paramsString = append(paramsString, p.Name+" "+datumTypes[p.Type])
+		paramsString = append(paramsString, p.sql())
+		isNull = isNull || p.Null
 	}
 	w.Write([]byte(strings.Join(paramsString, ",")))
 	w.Write([]byte(")\n"))
@@ -302,7 +342,11 @@ func (f *Function) SQL(packageName string, w io.Writer) {
 		w.Write([]byte("RETURNS " + datumTypes[f.ReturnType] + " AS\n"))
 	}
 	w.Write([]byte("'$libdir/" + packageName + "', '" + f.Name + "'\n"))
-	w.Write([]byte("LANGUAGE c VOLATILE STRICT;\n"))
+	if isNull {
+		w.Write([]byte("LANGUAGE c VOLATILE;\n"))
+	} else {
+		w.Write([]byte("LANGUAGE c VOLATILE STRICT;\n"))
+	}
 	if f.Doc == "" {
 		w.Write([]byte("\n"))
 		return
@@ -344,7 +388,7 @@ func (f *TriggerFunction) SQL(packageName string, w io.Writer) {
 	w.Write([]byte("CREATE OR REPLACE FUNCTION " + f.Name + "("))
 	var paramsString []string
 	for _, p := range f.Params {
-		paramsString = append(paramsString, p.Name+" "+datumTypes[p.Type])
+		paramsString = append(paramsString, p.sql())
 	}
 	w.Write([]byte(strings.Join(paramsString, ",")))
 	w.Write([]byte(")\n"))
