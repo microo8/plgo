@@ -28,10 +28,11 @@ type ModuleWriter struct {
 	packageAst     *ast.Package
 	functions      []CodeWriter
 	packageVersion string
+	description    string
 }
 
 //NewModuleWriter parses the go package and returns the FileSet and AST
-func NewModuleWriter(packagePath string, version string) (*ModuleWriter, error) {
+func NewModuleWriter(packagePath, version, description string) (*ModuleWriter, error) {
 	fset := token.NewFileSet()
 	// skip _test files in current package
 	filtertestfiles := func(fi os.FileInfo) bool {
@@ -71,6 +72,7 @@ func NewModuleWriter(packagePath string, version string) (*ModuleWriter, error) 
 		packageAst:     packageAst,
 		functions:      funcVisitor.functions,
 		packageVersion: version,
+		description:    description,
 	}, nil
 }
 
@@ -246,11 +248,18 @@ func (mw *ModuleWriter) WriteSQL(tempPackagePath string) error {
 //WriteControl writes .control file for the new postgresql extension
 func (mw *ModuleWriter) WriteControl(path string) error {
 	control := []byte(`# ` + mw.PackageName + ` extension
-comment = '` + mw.PackageName + ` extension'
+comment = '` + mw.comment() + `'
 default_version = '` + mw.packageVersion + `'
 relocatable = true`)
 	controlPath := filepath.Join(path, mw.PackageName+".control")
 	return ioutil.WriteFile(controlPath, control, 0644)
+}
+
+func (mw *ModuleWriter) comment() string {
+	if len(mw.description) > 0 {
+		return mw.description
+	}
+	return mw.PackageName + " extension"
 }
 
 //WriteMakefile writes .control file for the new postgresql extension
