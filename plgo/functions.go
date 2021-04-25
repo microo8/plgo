@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"io"
 	"reflect"
+	"regexp"
 	"strings"
 )
 
@@ -238,7 +239,7 @@ func (f *VoidFunction) Code(w io.Writer) {
 
 //SQL writes the SQL command that creates the function in DB
 func (f *VoidFunction) SQL(packageName string, w io.Writer) {
-	w.Write([]byte("CREATE OR REPLACE FUNCTION " + f.Name + "("))
+	w.Write([]byte("CREATE OR REPLACE FUNCTION " + toPgName(f.Name) + "("))
 	var paramStrings []string
 	isNull := false
 	for _, p := range f.Params {
@@ -267,7 +268,7 @@ func (f *VoidFunction) Comment(w io.Writer) {
 	for _, p := range f.Params {
 		paramTypes = append(paramTypes, datumTypes[p.Type])
 	}
-	w.Write([]byte("COMMENT ON FUNCTION " + f.Name + "(" + strings.Join(paramTypes, ",") + ") IS '" + f.Doc + "';\n\n"))
+	w.Write([]byte("COMMENT ON FUNCTION " + toPgName(f.Name) + "(" + strings.Join(paramTypes, ",") + ") IS '" + f.Doc + "';\n\n"))
 }
 
 //Function is a list of parameters and the return type
@@ -324,7 +325,7 @@ func (f *Function) Code(w io.Writer) {
 
 //SQL writes the SQL command that creates the function in DB
 func (f *Function) SQL(packageName string, w io.Writer) {
-	w.Write([]byte("CREATE OR REPLACE FUNCTION " + f.Name + "("))
+	w.Write([]byte("CREATE OR REPLACE FUNCTION " + toPgName(f.Name) + "("))
 	var paramsString []string
 	isNull := false
 	for _, p := range f.Params {
@@ -385,7 +386,7 @@ func (f *TriggerFunction) Code(w io.Writer) {
 
 //SQL writes the SQL command that creates the function in DB
 func (f *TriggerFunction) SQL(packageName string, w io.Writer) {
-	w.Write([]byte("CREATE OR REPLACE FUNCTION " + f.Name + "("))
+	w.Write([]byte("CREATE OR REPLACE FUNCTION " + toPgName(f.Name) + "("))
 	var paramsString []string
 	for _, p := range f.Params {
 		paramsString = append(paramsString, p.sql())
@@ -400,4 +401,13 @@ func (f *TriggerFunction) SQL(packageName string, w io.Writer) {
 		return
 	}
 	f.Comment(w)
+}
+
+var matchFirstCap = regexp.MustCompile("(.)([A-Z][a-z]+)")
+var matchAllCap = regexp.MustCompile("([a-z0-9])([A-Z])")
+
+func toPgName(str string) string {
+	snake := matchFirstCap.ReplaceAllString(str, "${1}_${2}")
+	snake = matchAllCap.ReplaceAllString(snake, "${1}_${2}")
+	return strings.ToLower(snake)
 }
