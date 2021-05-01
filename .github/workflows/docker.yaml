@@ -24,7 +24,6 @@ jobs:
       - name: Build and Publish Image
         run: |
           export REPO=ghcr.io/$(echo $GITHUB_REPOSITORY | tr '[:upper:]' '[:lower:]')
-          docker pull $REPO:latest
           docker build -t $REPO:$VERSION -t $REPO:latest .
           docker push $REPO:$VERSION
           docker push $REPO:latest
