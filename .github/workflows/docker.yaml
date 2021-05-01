@@ -11,7 +11,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
         with:
-          depth: 0
+          fetch-depth: 0
       - name: Version
         id: version
         uses: paulhatch/semantic-version@v4.0.2
@@ -24,6 +24,7 @@ jobs:
       - name: Build and Publish Image
         run: |
           export REPO=ghcr.io/$(echo $GITHUB_REPOSITORY | tr '[:upper:]' '[:lower:]')
+          docker pull $REPO:latest
           docker build -t $REPO:$VERSION -t $REPO:latest .
           docker push $REPO:$VERSION
           docker push $REPO:latest
