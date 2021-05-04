@@ -10,7 +10,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libc6-dev \
     make \
     pkg-config \
-    gnupg
+    gnupg \
+    jq
 
 # Install PostgreSQL development tools
 RUN set -e && \
