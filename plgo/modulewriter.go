@@ -268,6 +268,7 @@ func (mw *ModuleWriter) WriteMakefile(path string) error {
 DATA = ` + mw.PackageName + `--` + mw.packageVersion + `.sql  # script files to install
 # REGRESS = ` + mw.PackageName + `_test     # our test script file (without extension)
 MODULES = ` + mw.PackageName + `          # our c module file to build
+override with_llvm = no
 
 # postgres build stuff
 PG_CONFIG = pg_config
